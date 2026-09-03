@@ -1,0 +1,6 @@
+{
+  "name": "MeeLano Tunnel",
+  "description": "Advanced Hybrid VPN Tunnel with VIP & GitHub Servers, Smart Routing, and Biometric Security by MeeLano Studio Design",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
