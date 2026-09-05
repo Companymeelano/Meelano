@@ -18,6 +18,8 @@ class Socks5Outbound(
 ) : Outbound {
 
     private val socket = Socket()
+    override val input: InputStream
+    override val output: OutputStream
 
     init {
         protect(socket)
@@ -92,9 +94,6 @@ class Socks5Outbound(
         input = source
         output = sink
     }
-
-    override val input: InputStream
-    override val output: OutputStream
 
     override fun close() {
         runCatching { socket.close() }

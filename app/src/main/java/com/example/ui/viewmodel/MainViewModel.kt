@@ -232,7 +232,7 @@ class MainViewModel(
             triedServerIds.clear()
             _isTestingPing.value = true
             _toast.value = "در حال یافتن بهترین مسیر…"
-            repository.testPings(ServerRepository.ServerScope.ALL)
+            ServerRepository.ServerScope.entries.forEach { repository.testPings(it) }
             val fastest = repository.fastestServer()
             _isTestingPing.value = false
             if (fastest == null) {
