@@ -101,6 +101,7 @@ import com.example.ui.components.StatTile
 import com.example.ui.components.TrafficLineChart
 import com.example.ui.modals.ImportConfigDialog
 import com.example.ui.modals.LiveLogConsoleDialog
+import com.example.ui.modals.NeedsServersDialog
 import com.example.ui.modals.QrCodeDialog
 import com.example.ui.modals.SecurityLockScreen
 import com.example.ui.modals.ServerListModal
@@ -120,6 +121,7 @@ import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.pingColor
+import com.example.util.SoundEngine
 import com.example.ui.viewmodel.MainViewModel
 import com.example.vpn.VpnConnectionState
 
@@ -139,6 +141,7 @@ fun MainDashboardScreen(
     val isTestingPing by viewModel.isTestingPing.collectAsStateWithLifecycle()
     val refreshStage by viewModel.updateProgress.collectAsStateWithLifecycle()
     val speedTestState by viewModel.speedTest.collectAsStateWithLifecycle()
+    val needsServers by viewModel.needsServers.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val liveStats by viewModel.liveStats.collectAsStateWithLifecycle()
     val activeServer by viewModel.activeServer.collectAsStateWithLifecycle()
@@ -194,20 +197,6 @@ fun MainDashboardScreen(
 
                 Spacer(Modifier.height(Spacing.Large))
 
-                ActiveServerCard(
-                    name = activeServer.name,
-                    country = activeServer.countryName,
-                    flag = activeServer.flagEmoji,
-                    protocol = activeServer.protocol,
-                    host = activeServer.hostLabel,
-                    pingMs = if (isConnected && liveStats.pingMs > 0) liveStats.pingMs else activeServer.pingMs,
-                    accent = accent,
-                    onClick = { viewModel.openServersModal() },
-                    onFastest = {
-                        viewModel.connectWithBestEffort(context, onRequestVpnPermission)
-                    }
-                )
-
                 AnimatedVisibility(
                     visible = connectionState == VpnConnectionState.FAILED && lastError != null,
                     enter = fadeIn() + expandVertically(),
@@ -237,31 +226,46 @@ fun MainDashboardScreen(
 
                 Spacer(Modifier.height(Spacing.Large))
 
+                // One control for the server: identity, live latency, node count
+                // and the route into the list. Previously an ActiveServerCard and
+                // a ServerPortalButton sat on the same screen doing the same job.
+                ServerPortalButton(
+                    serverName = activeServer.name,
+                    country = activeServer.countryName,
+                    flag = activeServer.flagEmoji,
+                    protocol = activeServer.protocol,
+                    serverCount = totalServerCount,
+                    pingMs = if (isConnected && liveStats.pingMs > 0) liveStats.pingMs else activeServer.pingMs,
+                    isVerified = activeServer.isVerified,
+                    connected = isConnected,
+                    accent = accent,
+                    secondary = secondary,
+                    onClick = {
+                        if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        SoundEngine.play(SoundEngine.Cue.TAP)
+                        viewModel.openServersModal()
+                    },
+                    onAutoSelect = {
+                        if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        SoundEngine.play(SoundEngine.Cue.SCAN)
+                        viewModel.connectWithBestEffort(context, onRequestVpnPermission)
+                    }
+                )
+
+                Spacer(Modifier.height(Spacing.Large))
+
                 ConnectOrb(
                     state = connectionState,
                     accent = accent,
                     secondary = secondary,
                     onClick = {
                         if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        SoundEngine.play(SoundEngine.Cue.TAP)
                         viewModel.requestToggle(context, onRequestVpnPermission)
                     }
                 )
 
                 Spacer(Modifier.height(Spacing.Large))
-
-                // The route to the server list, given real presence directly
-                // under the connect control where users look for it.
-                ServerPortalButton(
-                    serverName = activeServer.name,
-                    serverCount = totalServerCount,
-                    pingMs = activeServer.pingMs,
-                    accent = accent,
-                    secondary = secondary,
-                    onClick = {
-                        if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.openServersModal()
-                    }
-                )
 
                 Spacer(Modifier.height(Spacing.Large))
 
@@ -343,6 +347,22 @@ fun MainDashboardScreen(
                 },
                 progress = refreshStage?.fraction
             )
+
+            if (needsServers) {
+                NeedsServersDialog(
+                    accent = accent,
+                    secondary = secondary,
+                    onOpenServers = {
+                        viewModel.dismissNeedsServers()
+                        viewModel.openServersModal()
+                    },
+                    onFetchNow = {
+                        viewModel.dismissNeedsServers()
+                        viewModel.refreshSubscriptions()
+                    },
+                    onDismiss = { viewModel.dismissNeedsServers() }
+                )
+            }
 
             // Live throughput readout, shown while a measurement runs and left
             // on screen with the result until dismissed.
@@ -445,23 +465,10 @@ private fun TopBar(
                         )
                     )
                     Spacer(Modifier.width(5.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(MeelanoGoldVip.copy(alpha = 0.28f), MeelanoGoldVip.copy(alpha = 0.10f))
-                                )
-                            )
-                            .padding(horizontal = 6.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            "VIP",
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MeelanoGoldVip
-                        )
-                    }
+                    // A struck-metal badge rather than a flat pill: bevelled
+                    // edge, gradient fill and a slow sheen that travels across
+                    // the face, matching the chrome on the launcher icon.
+                    VipBadge(accent = accent)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     GlowDot(
@@ -518,76 +525,78 @@ private fun CircleIconButton(icon: ImageVector, description: String, onClick: ()
 
 // ---------------------------------------------------------------- server card
 
-@Composable
-private fun ActiveServerCard(
-    name: String,
-    country: String,
-    flag: String,
-    protocol: String,
-    host: String,
-    pingMs: Int,
-    accent: Color,
-    onClick: () -> Unit,
-    onFastest: () -> Unit
-) {
-    GlassCard(modifier = Modifier.fillMaxWidth(), accent = accent, onClick = onClick, padding = 12.dp) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(flag, fontSize = 26.sp)
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text(
-                        name,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "$country · $protocol",
-                        fontSize = 10.sp,
-                        color = TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(host, fontSize = 9.sp, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        if (pingMs > 0) "$pingMs" else "—",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = pingColor(pingMs)
-                    )
-                    Text("ms", fontSize = 8.sp, color = TextMuted)
-                }
-                Spacer(Modifier.width(8.dp))
-                SignalBars(pingMs)
-                Spacer(Modifier.width(10.dp))
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(accent.copy(alpha = 0.15f))
-                        .clickable { onFastest() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.Bolt, "سریع‌ترین سرور", tint = accent, modifier = Modifier.size(18.dp))
-                }
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------- speed row
+
+/** Struck-metal VIP badge with a travelling sheen. */
+@Composable
+private fun VipBadge(accent: Color) {
+    val transition = rememberInfiniteTransition(label = "vip")
+    val sheen by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2800, easing = LinearEasing)),
+        label = "sheen"
+    )
+
+    Box(
+        modifier = Modifier
+            .padding(start = 6.dp)
+            .size(width = 38.dp, height = 17.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val r = size.height / 2f
+            val corner = androidx.compose.ui.geometry.CornerRadius(r, r)
+
+            // Warm halo, so the badge reads as lit metal on the dark field.
+            drawRoundRect(
+                brush = Brush.radialGradient(
+                    listOf(MeelanoGoldVip.copy(alpha = 0.35f), Color.Transparent),
+                    center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f),
+                    radius = size.width * 0.75f
+                ),
+                cornerRadius = corner
+            )
+            // Body: bright along the top edge, falling to a deep amber below.
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(
+                        Color(0xFFFFE9A8),
+                        MeelanoGoldVip,
+                        Color(0xFF9A6510)
+                    )
+                ),
+                cornerRadius = corner
+            )
+            // Travelling sheen.
+            val x = size.width * (sheen * 1.8f - 0.4f)
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    listOf(Color.Transparent, Color.White.copy(alpha = 0.55f), Color.Transparent),
+                    start = androidx.compose.ui.geometry.Offset(x - 14f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(x + 14f, size.height)
+                ),
+                cornerRadius = corner
+            )
+            // Bevel.
+            drawRoundRect(
+                brush = Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.75f), Color(0xFF6B4200).copy(alpha = 0.8f))
+                ),
+                cornerRadius = corner,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2f)
+            )
+        }
+        Text(
+            "VIP",
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 0.8.sp,
+            color = Color(0xFF3A2300)
+        )
+    }
+}
 
 @Composable
 private fun LiveSpeedRow(down: Float, up: Float, accent: Color) {

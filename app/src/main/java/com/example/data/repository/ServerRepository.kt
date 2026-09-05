@@ -491,6 +491,9 @@ class ServerRepository(
                     Request.Builder()
                         .url(candidate)
                         .header("User-Agent", com.example.vpn.proto.Transport.USER_AGENT)
+                        // api.github.com returns base64 JSON metadata unless the
+                        // raw media type is requested; harmless on other hosts.
+                        .header("Accept", "application/vnd.github.raw, text/plain, */*")
                         // OkHttp adds this itself and transparently inflates the
                         // reply, but being explicit keeps proxies from stripping it.
                         .header("Accept-Encoding", "gzip")
@@ -539,6 +542,11 @@ class ServerRepository(
 
         return listOf(
             url,
+            // The GitHub REST API is the most reliable fallback on filtered
+            // networks: it lives on api.github.com, which is routinely reachable
+            // where raw.githubusercontent.com and jsDelivr are both blocked.
+            // Requesting the raw media type returns the file bytes verbatim.
+            "https://api.github.com/repos/$owner/$repo/contents/$path?ref=$ref",
             "https://cdn.jsdelivr.net/gh/$owner/$repo@$ref/$path",
             "https://fastly.jsdelivr.net/gh/$owner/$repo@$ref/$path",
             "https://gcore.jsdelivr.net/gh/$owner/$repo@$ref/$path",

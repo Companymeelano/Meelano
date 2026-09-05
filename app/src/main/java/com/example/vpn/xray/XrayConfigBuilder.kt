@@ -252,7 +252,12 @@ object XrayConfigBuilder {
     /** Transport + security layer: the part Reality and xhttp actually need. */
     private fun buildStreamSettings(endpoint: ProxyEndpoint): JSONObject {
         val stream = JSONObject()
-        val network = endpoint.network.ifBlank { "tcp" }
+        // Recent Xray renamed the plain TCP transport to "raw" and newer feeds
+        // publish it that way, so accept both spellings.
+        val network = when (val n = endpoint.network.ifBlank { "tcp" }) {
+            "raw" -> "tcp"
+            else -> n
+        }
         stream.put("network", network)
 
         when (endpoint.security) {

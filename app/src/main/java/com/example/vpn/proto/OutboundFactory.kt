@@ -9,7 +9,8 @@ import java.net.Socket
 object OutboundFactory {
 
     /** Transports the carrier layer can actually establish. */
-    private val SUPPORTED_NETWORKS = setOf("tcp", "ws", "httpupgrade", "grpc", "gun", "")
+    // "raw" is Xray's newer name for the plain TCP transport.
+    private val SUPPORTED_NETWORKS = setOf("tcp", "raw", "ws", "httpupgrade", "grpc", "gun", "")
 
     fun supports(endpoint: ProxyEndpoint): Boolean {
         val protocolOk = when (endpoint.protocol) {

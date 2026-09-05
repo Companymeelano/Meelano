@@ -23,6 +23,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,15 +85,27 @@ fun ConnectOrb(
 
     val transition = rememberInfiniteTransition(label = "orb")
 
-    // Continuous rotation drives the ring and the particles.
-    val spin by transition.animateFloat(
+    // Rotation is a status signal, not decoration: the rings are still while
+    // idle and only spin once the tunnel is live or coming up. A permanently
+    // turning orb gave no clue whether anything was actually happening.
+    val active = connected || busy
+    val spinTarget by transition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            tween(if (busy) 1400 else if (connected) 7000 else 18000, easing = LinearEasing)
+            tween(if (busy) 1500 else 7000, easing = LinearEasing)
         ),
         label = "spin"
     )
+    // Ease the rings to a stop instead of cutting the animation dead.
+    val spinScale by animateFloatAsState(
+        targetValue = if (active) 1f else 0f,
+        animationSpec = tween(900, easing = FastOutSlowInEasing),
+        label = "spinScale"
+    )
+    val restAngle = remember { mutableFloatStateOf(0f) }
+    if (active) restAngle.floatValue = spinTarget
+    val spin = if (active) spinTarget else restAngle.floatValue
 
     // Shock rings: three staggered expansions.
     val ripple by transition.animateFloat(
@@ -289,7 +302,10 @@ fun ConnectOrb(
                     val ordered = points.sortedBy { it.second }
                     ordered.forEach { (position, depth, perspective) ->
                         val tone = if (ringIndex == 1) secondaryTone else stateColor
-                        val alpha = (0.06f + 0.55f * depth * depth) * (0.35f + 0.65f * glow)
+                        // Rings dim toward a faint outline when the orb is at
+                        // rest, so "idle" is legible at a glance.
+                        val alpha = (0.06f + 0.55f * depth * depth) *
+                            (0.35f + 0.65f * glow) * (0.35f + 0.65f * spinScale)
                         drawCircle(
                             color = tone.copy(alpha = alpha),
                             radius = (0.7f + 1.9f * depth) * perspective,
@@ -299,19 +315,21 @@ fun ConnectOrb(
 
                     // A travelling light bead per ring, so motion is legible even
                     // when the app is idle and the rings are dim.
-                    if (connected || busy) {
+                    if (spinScale > 0.02f) {
                         val head = points[
                             ((spin * speed / 360f * samples).toInt().mod(samples))
                         ]
                         val (position, depth, perspective) = head
                         val tone = if (ringIndex == 1) secondaryTone else stateColor
                         drawCircle(
-                            color = tone.copy(alpha = 0.28f * glow * depth),
+                            color = tone.copy(alpha = 0.28f * glow * depth * spinScale),
                             radius = 9f * perspective,
                             center = position
                         )
                         drawCircle(
-                            color = Color.White.copy(alpha = (0.35f + 0.6f * depth) * glow),
+                            color = Color.White.copy(
+                                alpha = (0.35f + 0.6f * depth) * glow * spinScale
+                            ),
                             radius = 2.6f * perspective,
                             center = position
                         )

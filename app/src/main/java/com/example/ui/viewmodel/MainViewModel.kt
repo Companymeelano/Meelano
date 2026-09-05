@@ -16,6 +16,7 @@ import com.example.data.settings.SettingsStore
 import com.example.util.SmartImportHelper
 import com.example.core.SpeedTester
 import com.example.core.ConfigParser
+import com.example.util.SoundEngine
 import com.example.vpn.MeelanoVpnService
 import com.example.vpn.VpnConnectionState
 import kotlinx.coroutines.delay
@@ -105,6 +106,10 @@ class MainViewModel(
     private val _speedTest = MutableStateFlow<SpeedTestState?>(null)
     val speedTest: StateFlow<SpeedTestState?> = _speedTest.asStateFlow()
 
+    /** Raised when connect is pressed with an empty server list. */
+    private val _needsServers = MutableStateFlow(false)
+    val needsServers: StateFlow<Boolean> = _needsServers.asStateFlow()
+
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
 
@@ -116,9 +121,17 @@ class MainViewModel(
         viewModelScope.launch {
             repository.restore()
             if (settings.lockOnStart.first()) securityManager.lock()
-            if (freeServers.value.isEmpty()) refreshSubscriptions(silent = true)
+            // Deliberately NOT refreshing here. A multi-stage subscription fetch
+            // on first launch spends the user's data before they have asked for
+            // anything and makes the app look stuck. Connecting without servers
+            // now points them at the server screen instead.
         }
         watchForDrops()
+
+        // Mirror the persisted mute preference into the sound engine.
+        viewModelScope.launch {
+            settings.soundMuted.collect { SoundEngine.muted = it }
+        }
     }
 
     // region connection
@@ -127,6 +140,13 @@ class MainViewModel(
         val state = connectionState.value
         if (state == VpnConnectionState.CONNECTED || state.isBusy) {
             stopVpn(context)
+            return
+        }
+
+        // With no nodes at all there is nothing to dial, so send the user to the
+        // server screen rather than failing with a vague error.
+        if (!hasAnyServer()) {
+            _needsServers.value = true
             return
         }
         val consent = android.net.VpnService.prepare(context)
@@ -187,6 +207,13 @@ class MainViewModel(
                 // The service now caps its own handshake, but a wedged socket or
                 // a missed callback must not leave the user staring at "در حال
                 // اتصال" with no way forward.
+                when (state) {
+                    VpnConnectionState.CONNECTED -> SoundEngine.play(SoundEngine.Cue.CONNECT)
+                    VpnConnectionState.DISCONNECTED -> SoundEngine.play(SoundEngine.Cue.DISCONNECT)
+                    VpnConnectionState.FAILED -> SoundEngine.play(SoundEngine.Cue.ERROR)
+                    else -> Unit
+                }
+
                 if (state == VpnConnectionState.CONNECTING ||
                     state == VpnConnectionState.RECONNECTING
                 ) {
@@ -264,6 +291,16 @@ class MainViewModel(
             )
         }
     }
+
+    fun dismissNeedsServers() {
+        _needsServers.value = false
+    }
+
+    /** True when any list holds at least one node. */
+    fun hasAnyServer(): Boolean =
+        vipServers.value.isNotEmpty() ||
+            freeServers.value.isNotEmpty() ||
+            customServers.value.isNotEmpty()
 
     fun dismissSpeedTest() {
         _speedTest.value = null
@@ -439,6 +476,7 @@ class MainViewModel(
     }
 
     fun refreshSubscriptions(silent: Boolean = false) {
+        if (!silent) SoundEngine.play(SoundEngine.Cue.SCAN)
         viewModelScope.launch {
             _isUpdatingGitHub.value = true
             if (!silent) MeelanoVpnService.log("Fetching subscriptions…")

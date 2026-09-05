@@ -36,10 +36,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MeelanoGreenSuccess
+import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import kotlin.math.PI
@@ -64,12 +66,18 @@ import kotlin.math.sin
 @Composable
 fun ServerPortalButton(
     serverName: String,
+    country: String,
+    flag: String,
+    protocol: String,
     serverCount: Int,
     pingMs: Int,
+    isVerified: Boolean,
+    connected: Boolean,
     accent: Color,
     secondary: Color,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAutoSelect: () -> Unit
 ) {
     val transition = rememberInfiniteTransition(label = "portal")
     val spin by transition.animateFloat(
@@ -101,7 +109,7 @@ fun ServerPortalButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(96.dp)
+            .height(118.dp)
             .clip(RoundedCornerShape(22.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
     ) {
@@ -172,43 +180,86 @@ fun ServerPortalButton(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 20.dp, end = 112.dp),
+                .padding(start = 18.dp, end = 104.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    "سرورها",
-                    color = TextPrimary,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (flag.isNotBlank()) {
+                        Text(flag, fontSize = 15.sp)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        serverName.ifBlank { "سروری انتخاب نشده" },
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    serverName.ifBlank { "سروری انتخاب نشده" },
-                    color = TextSecondary,
-                    fontSize = 11.sp,
-                    maxLines = 1
-                )
-                Spacer(Modifier.height(5.dp))
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text(
-                        "$serverCount نود",
-                        color = accent,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (country.isNotBlank()) {
+                        Text(country, color = TextSecondary, fontSize = 10.sp, maxLines = 1)
+                        Text("·", color = TextMuted, fontSize = 10.sp)
+                    }
+                    Text(protocol, color = TextSecondary, fontSize = 10.sp, maxLines = 1)
                     if (pingMs in 1..9_998) {
-                        Text("·", color = TextSecondary, fontSize = 10.sp)
+                        Text("·", color = TextMuted, fontSize = 10.sp)
                         Text(
                             "$pingMs ms",
-                            color = MeelanoGreenSuccess,
+                            color = if (connected) MeelanoGreenSuccess else accent,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
+                    if (isVerified) {
+                        Text("✓", color = MeelanoGreenSuccess, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(Modifier.height(7.dp))
+
+                // Auto-select lives inside the same object rather than as a
+                // separate card, which is what made the old layout feel like two
+                // competing entry points to the same screen.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(9.dp))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(
+                                        accent.copy(alpha = 0.30f),
+                                        secondary.copy(alpha = 0.20f)
+                                    )
+                                )
+                            )
+                            .clickable(onClick = onAutoSelect)
+                            .padding(horizontal = 9.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            "⚡ انتخاب خودکار",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        "$serverCount نود",
+                        color = TextMuted,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
