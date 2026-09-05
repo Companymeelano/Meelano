@@ -32,6 +32,9 @@ object Transport {
         """^((\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]*:[0-9a-fA-F:]*)$"""
     )
 
+    /** Negotiations must be brisk even though data streams may idle. */
+    private const val HANDSHAKE_TIMEOUT_MS = 8_000
+
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 60_000
 
@@ -68,6 +71,11 @@ object Transport {
         var input: InputStream = BufferedInputStream(socket.getInputStream(), 32 * 1024)
         var output: OutputStream = socket.getOutputStream()
 
+        // Keep the transport negotiation on a short leash too. A CDN edge that
+        // accepts the socket but never answers the Upgrade request would
+        // otherwise hold the connect attempt open for the full read timeout.
+        socket.soTimeout = HANDSHAKE_TIMEOUT_MS
+
         when (endpoint.network) {
             "ws" -> {
                 performWebSocketUpgrade(endpoint, input, output)
@@ -95,6 +103,10 @@ object Transport {
                 output = h2.output
             }
         }
+
+        // Negotiation is done; restore the patient timeout for the data phase,
+        // where an idle stream is perfectly normal.
+        socket.soTimeout = READ_TIMEOUT_MS
 
         return Carrier(socket, input, output)
     }
@@ -160,8 +172,13 @@ object Transport {
             tls.sslParameters = params
         }
 
-        tls.soTimeout = READ_TIMEOUT_MS
+        // Bound the TLS handshake itself. It inherits SO_TIMEOUT, and the 60s
+        // read timeout that suits a long-lived data stream is far too patient
+        // for a negotiation — a silent server would stall the connect for a full
+        // minute. Tighten it for the handshake, then restore it for data.
+        tls.soTimeout = HANDSHAKE_TIMEOUT_MS
         tls.startHandshake()
+        tls.soTimeout = READ_TIMEOUT_MS
         return tls
     }
 
