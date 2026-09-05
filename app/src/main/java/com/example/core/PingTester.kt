@@ -4,7 +4,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 import java.net.InetSocketAddress
 import java.net.Socket
 import kotlin.system.measureTimeMillis
@@ -59,21 +62,31 @@ object PingTester {
         parallelism: Int = 12,
         timeoutMs: Int = DEFAULT_TIMEOUT_MS,
         keyOf: (T) -> String,
-        addressOf: (T) -> Pair<String, Int>?
+        addressOf: (T) -> Pair<String, Int>?,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): Map<String, Int> = coroutineScope {
-        val results = LinkedHashMap<String, Int>()
-        items.chunked(parallelism).forEach { chunk ->
-            val measured = chunk.map { item ->
-                async(Dispatchers.IO) {
+        val total = items.size
+        val done = AtomicInteger()
+
+        // A semaphore rather than chunked(): chunking made every batch wait for
+        // its own slowest member, so a single node timing out stalled 31 idle
+        // workers. With a permit pool each worker starts the moment one frees up.
+        val gate = Semaphore(parallelism)
+
+        val measured = items.map { item ->
+            async(Dispatchers.IO) {
+                val latency = gate.withPermit {
                     val address = addressOf(item)
-                    val latency =
-                        if (address == null) UNREACHABLE
-                        else ping(address.first, address.second, timeoutMs)
-                    keyOf(item) to latency
+                    if (address == null) UNREACHABLE
+                    else ping(address.first, address.second, timeoutMs)
                 }
-            }.awaitAll()
-            results.putAll(measured)
-        }
-        results
+                // Report after every single probe. Without this the caller's
+                // counter sat at zero for the whole sweep and the UI looked hung.
+                onProgress(done.incrementAndGet(), total)
+                keyOf(item) to latency
+            }
+        }.awaitAll()
+
+        LinkedHashMap<String, Int>().apply { putAll(measured) }
     }
 }

@@ -163,6 +163,15 @@ class ServerRepository(
 
     // region ping
 
+    /** Lets callers surface their own stage in the shared progress indicator. */
+    fun reportProgress(stage: String, done: Int, total: Int) {
+        _updateProgress.value = UpdateProgress(stage, done, total)
+    }
+
+    fun clearProgress() {
+        _updateProgress.value = null
+    }
+
     /** Real TCP ping over every server in the given tab; dead nodes are marked. */
     suspend fun testPings(scope: ServerScope) {
         val list = listFor(scope)
@@ -172,7 +181,10 @@ class ServerRepository(
         val results = PingTester.pingAll(
             items = list,
             keyOf = { it.id },
-            addressOf = { server -> server.endpoint?.let { it.host to it.port } }
+            addressOf = { server -> server.endpoint?.let { it.host to it.port } },
+            onProgress = { done, total ->
+                _updateProgress.value = UpdateProgress("در حال تست پینگ…", done, total)
+            }
         )
         val now = System.currentTimeMillis()
         val updated = list.map { server ->
@@ -188,19 +200,52 @@ class ServerRepository(
         _updateProgress.value = null
     }
 
-    /** Returns the fastest reachable server across all lists, or null. */
-    suspend fun fastestServer(): VpnServer? {
+    /**
+     * Returns the fastest server that can genuinely carry traffic, or null.
+     *
+     * A TCP ping is not enough to choose a server. A dead node whose port is
+     * still accepted looks like the *best* candidate — lowest latency wins — so
+     * picking on ping alone reliably selected a node that could never connect.
+     * The ping sweep is therefore only a shortlist; the winner is decided by
+     * [NodeValidator], which runs the real protocol handshake.
+     */
+    suspend fun fastestServer(
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): VpnServer? {
         val candidates = allServers()
         if (candidates.isEmpty()) return null
+
         val results = PingTester.pingAll(
             items = candidates,
             keyOf = { it.id },
-            addressOf = { s -> s.endpoint?.let { it.host to it.port } }
+            addressOf = { s -> s.endpoint?.let { it.host to it.port } },
+            onProgress = onProgress
         )
-        return candidates
+
+        val shortlist = candidates
             .map { it.copy(pingMs = results[it.id] ?: PingTester.UNREACHABLE) }
             .filter { it.isReachable }
-            .minByOrNull { it.pingMs }
+            .sortedBy { it.pingMs }
+            .take(12)
+        if (shortlist.isEmpty()) return null
+
+        val byEndpoint = shortlist.mapNotNull { server ->
+            server.endpoint?.let { it to server }
+        }
+        val verified = NodeValidator.validateAll(
+            endpoints = byEndpoint.map { it.first },
+            parallelism = 8,
+            probeTimeoutMs = 5_000,
+            target = 1,
+            onProgress = onProgress
+        )
+
+        // Prefer a node proven to relay traffic; only if none does, fall back to
+        // the best ping so the user still gets an attempt rather than nothing.
+        val winner = verified.firstOrNull()?.let { result ->
+            byEndpoint.firstOrNull { it.first === result.endpoint }?.second
+        }
+        return winner ?: shortlist.firstOrNull()
     }
 
     private fun estimateThroughput(latencyMs: Int): Float = when {
@@ -278,7 +323,10 @@ class ServerRepository(
                 parallelism = 32,
                 timeoutMs = 1500,
                 keyOf = { "${it.host}:${it.port}" },
-                addressOf = { it.host to it.port }
+                addressOf = { it.host to it.port },
+                onProgress = { done, total ->
+                    _updateProgress.value = UpdateProgress("تست دسترسی…", done, total)
+                }
             ).let { latencies ->
                 eligible.mapNotNull { endpoint ->
                     val latency = latencies["${endpoint.host}:${endpoint.port}"]

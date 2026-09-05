@@ -333,10 +333,13 @@ class MainViewModel(
             _isTestingPing.value = true
             _toast.value = "در حال یافتن بهترین مسیر…"
             ServerRepository.ServerScope.entries.forEach { repository.testPings(it) }
-            val fastest = repository.fastestServer()
+            val fastest = repository.fastestServer { done, total ->
+                repository.reportProgress("اعتبارسنجی سرورها…", done, total)
+            }
             _isTestingPing.value = false
+            repository.clearProgress()
             if (fastest == null) {
-                _toast.value = "هیچ سرور در دسترسی پیدا نشد"
+                _toast.value = "هیچ سرور سالمی پیدا نشد؛ فهرست را به‌روزرسانی کنید"
                 return@launch
             }
             repository.selectServer(fastest)
@@ -348,10 +351,13 @@ class MainViewModel(
     fun connectToFastest(context: Context, onNeedsPermission: () -> Unit) {
         viewModelScope.launch {
             _isTestingPing.value = true
-            val fastest = repository.fastestServer()
+            val fastest = repository.fastestServer { done, total ->
+                repository.reportProgress("اعتبارسنجی سرورها…", done, total)
+            }
             _isTestingPing.value = false
+            repository.clearProgress()
             if (fastest == null) {
-                _toast.value = "هیچ سرور در دسترسی پیدا نشد"
+                _toast.value = "هیچ سرور سالمی پیدا نشد؛ فهرست را به‌روزرسانی کنید"
                 return@launch
             }
             repository.selectServer(fastest)
