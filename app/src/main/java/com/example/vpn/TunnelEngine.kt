@@ -7,7 +7,8 @@ import com.example.vpn.proto.Destination
 import com.example.vpn.proto.OutboundFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import java.util.Timer
+import java.util.TimerTask
 import java.net.Socket
 
 /**
@@ -63,12 +64,29 @@ object TunnelEngine {
 
         // Hard ceiling on the whole handshake.
         //
-        // Each individual read is bounded by the socket's 60s SO_TIMEOUT, but a
-        // node that accepts TCP and then stays silent — very common among dead
-        // free nodes — would pin the UI in "connecting" for a full minute with
-        // nothing happening. Nothing usable takes this long, so cap the entire
-        // exchange and report a clean failure rather than hanging.
-        val timed = withTimeoutOrNull(HANDSHAKE_TIMEOUT_MS) {
+        // Hard ceiling on the whole handshake.
+        //
+        // A node that accepts TCP and then stays silent — very common among dead
+        // free nodes — would otherwise pin the UI in "connecting" until the
+        // socket's own 60s read timeout expired.
+        //
+        // Note that wrapping this in withTimeoutOrNull alone does NOT work:
+        // InputStream.read is a blocking call that ignores coroutine
+        // cancellation, so the timeout could not fire until the read had already
+        // returned. The watchdog therefore closes the outbound, which forces the
+        // pending read to throw and unwinds the attempt immediately.
+        val watchdog = Timer("meelano-handshake-watchdog", true)
+        var timedOut = false
+        watchdog.schedule(
+            object : TimerTask() {
+                override fun run() {
+                    timedOut = true
+                    runCatching { outbound?.close() }
+                }
+            },
+            HANDSHAKE_TIMEOUT_MS
+        )
+
         try {
             // A real protocol tunnel to a real destination.
 
@@ -89,7 +107,7 @@ object TunnelEngine {
             val latency = (System.currentTimeMillis() - started).toInt()
 
             if (read <= 0) {
-                return@withTimeoutOrNull HandshakeResult(
+                return@withContext HandshakeResult(
                     success = false,
                     latencyMs = PingTester.UNREACHABLE,
                     negotiatedProtocol = "-",
@@ -112,7 +130,7 @@ object TunnelEngine {
 
             val reply = String(buffer, 0, read, Charsets.US_ASCII)
             if (!reply.startsWith("HTTP/")) {
-                return@withTimeoutOrNull HandshakeResult(
+                return@withContext HandshakeResult(
                     success = false,
                     latencyMs = latency,
                     negotiatedProtocol = "-",
@@ -134,20 +152,16 @@ object TunnelEngine {
                 latencyMs = PingTester.UNREACHABLE,
                 negotiatedProtocol = "-",
                 cipherSuite = "-",
-                error = e.message ?: e::class.java.simpleName
+                error = if (timedOut) {
+                    "زمان دست‌دادن به پایان رسید (سرور پاسخ نداد)"
+                } else {
+                    e.message ?: e::class.java.simpleName
+                }
             )
         } finally {
+            watchdog.cancel()
             runCatching { outbound?.close() }
         }
-        }
-
-        timed ?: HandshakeResult(
-            success = false,
-            latencyMs = PingTester.UNREACHABLE,
-            negotiatedProtocol = "-",
-            cipherSuite = "-",
-            error = "زمان دست‌دادن به پایان رسید (سرور پاسخ نداد)"
-        )
     }
 
     private fun describeTransport(endpoint: ProxyEndpoint, negotiated: String): String =

@@ -9,8 +9,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.net.Socket
+import java.util.Timer
+import java.util.TimerTask
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -105,14 +106,29 @@ object NodeValidator {
         val probe = PROBES[Math.floorMod(endpoint.host.hashCode(), PROBES.size)]
         val started = System.currentTimeMillis()
 
-        val outcome = withTimeoutOrNull(timeoutMs) {
-            var tunnel: com.example.vpn.proto.Outbound? = null
+        // As in TunnelEngine, a coroutine timeout cannot interrupt a blocking
+        // socket read — the watchdog has to close the stream to unblock it.
+        var tunnel: com.example.vpn.proto.Outbound? = null
+        var timedOut = false
+        val watchdog = Timer("meelano-probe-watchdog", true)
+        watchdog.schedule(
+            object : TimerTask() {
+                override fun run() {
+                    timedOut = true
+                    runCatching { tunnel?.close() }
+                }
+            },
+            timeoutMs
+        )
+
+        val outcome = run {
             try {
-                tunnel = OutboundFactory.create(
+                val stream = OutboundFactory.create(
                     endpoint,
                     Destination.of(probe.host, 80),
                     protect
                 )
+                tunnel = stream
 
                 val request = buildString {
                     append("HEAD ").append(probe.path).append(" HTTP/1.1\r\n")
@@ -121,26 +137,27 @@ object NodeValidator {
                     append("\r\n")
                     append("Connection: close\r\n\r\n")
                 }
-                tunnel.output.write(request.toByteArray(Charsets.US_ASCII))
-                tunnel.output.flush()
+                stream.output.write(request.toByteArray(Charsets.US_ASCII))
+                stream.output.flush()
 
                 val buffer = ByteArray(128)
-                val read = tunnel.input.read(buffer)
-                if (read <= 0) return@withTimeoutOrNull "سرور پاسخی برنگرداند"
+                val read = stream.input.read(buffer)
+                if (read <= 0) return@run "سرور پاسخی برنگرداند"
 
                 val reply = String(buffer, 0, read, Charsets.US_ASCII)
                 // A working relay always returns a well-formed status line.
                 if (!reply.startsWith("HTTP/")) "پاسخ نامعتبر (رمز یا پروتکل اشتباه)" else null
             } catch (e: Exception) {
-                e.message ?: e::class.java.simpleName
+                if (timedOut) "زمان اتصال به پایان رسید" else e.message ?: e::class.java.simpleName
             } finally {
+                watchdog.cancel()
                 runCatching { tunnel?.close() }
             }
         }
 
         val elapsed = (System.currentTimeMillis() - started).toInt()
         when {
-            outcome == null && elapsed >= timeoutMs ->
+            timedOut ->
                 Result(endpoint, PingTester.UNREACHABLE, false, "زمان اتصال به پایان رسید")
 
             outcome == null ->
