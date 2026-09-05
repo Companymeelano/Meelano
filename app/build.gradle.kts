@@ -27,15 +27,17 @@ android {
   // (locally via KEYSTORE_PATH, or in CI via the release secrets). Otherwise the
   // release build falls back to the debug signing identity so that
   // `assembleRelease` always produces an installable APK.
-  val releaseKeystore = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks")
-  val hasReleaseKeystore = releaseKeystore.exists()
+  val releaseKeystorePath =
+    System.getenv("KEYSTORE_PATH")?.takeIf { it.isNotBlank() } ?: "${rootDir}/my-upload-key.jks"
+  val releaseKeystore = file(releaseKeystorePath)
+  val hasReleaseKeystore = releaseKeystore.isFile && !System.getenv("STORE_PASSWORD").isNullOrBlank()
 
   signingConfigs {
     if (hasReleaseKeystore) {
       create("release") {
         storeFile = releaseKeystore
         storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
+        keyAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "upload"
         keyPassword = System.getenv("KEY_PASSWORD")
       }
     }
