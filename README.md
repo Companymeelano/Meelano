@@ -78,8 +78,11 @@ SecurityManagerTest – PIN hashing, wrong-PIN handling, rotation, lockout
 
 ## Notes
 
-* The VIP nodes bundled in `BundledServers` are example endpoints. Replace `configLink`
-  with your own subscription/servers — the app pings and connects to whatever is really there.
+* The VIP fleet ships 24 real VLESS-over-WebSocket/TLS nodes across the UK, US, NL and DE.
+  Each location appears twice: a CDN-fronted entry (most resilient to filtering) and a
+  **پلاس** entry that dials the origin directly with a fronted SNI/Host pair (usually faster).
+  These nodes are **white-labelled** — `BundledServersTest` asserts that no provider hostname,
+  IP or identifier can appear in a server name, host label, live stat, tunnel log or QR sheet.
 * Protocol encapsulation is implemented natively in Kotlin — no `libcore.aar` / Xray binary
   is bundled or required. The trade-offs of that choice:
   * **Hysteria 2 is not supported** (it needs a QUIC stack). Such nodes are filtered out of
