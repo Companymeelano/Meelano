@@ -913,6 +913,7 @@ private fun Modals(
             activeServer = active,
             isTestingPing = testing,
             isUpdating = updating,
+            updateProgress = progress,
             progressLabel = progress?.stage,
             progressFraction = progress?.fraction ?: 0f,
             sort = sort,

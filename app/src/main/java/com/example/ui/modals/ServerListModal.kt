@@ -2,6 +2,8 @@ package com.example.ui.modals
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import com.example.ui.theme.Spacing
+import com.example.ui.components.GlowProgressBar
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -278,17 +280,39 @@ fun ServerListModal(
                     }
                 }
 
+                // The refresh runs in stages (fetch, reachability sweep, then the
+                // strict real-traffic validation); show which one is running.
                 AnimatedVisibility(visible = progressLabel != null) {
                     Column {
-                        Spacer(Modifier.height(8.dp))
-                        Text(progressLabel.orEmpty(), fontSize = 10.sp, color = TextSecondary)
-                        Spacer(Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { progressFraction },
-                            modifier = Modifier.fillMaxWidth().height(3.dp),
-                            color = accent,
-                            trackColor = Color.White.copy(alpha = 0.08f)
-                        )
+                        Spacer(Modifier.height(Spacing.Small))
+                        GlassCard(corner = 12.dp, padding = 10.dp, accent = accent) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        progressLabel.orEmpty(),
+                                        fontSize = 11.sp,
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        "${(progressFraction * 100).toInt()}%",
+                                        fontSize = 10.sp,
+                                        color = accent,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Spacer(Modifier.height(7.dp))
+                                GlowProgressBar(
+                                    fraction = progressFraction,
+                                    accent = accent,
+                                    secondary = MeelanoGreenSuccess
+                                )
+                            }
+                        }
                     }
                 }
 
