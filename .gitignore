@@ -17,3 +17,9 @@ local.properties
 .env
 debug.keystore
 my-upload-key.jks
+
+# Icon working files (sources kept, intermediates not)
+art/ic_bg_1024.png
+art/ic_fg_1024.png
+art/ic_legacy_1024.png
+art/preview_*.png

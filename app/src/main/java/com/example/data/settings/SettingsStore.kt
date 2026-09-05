@@ -41,6 +41,7 @@ class SettingsStore(private val context: Context) {
         val SUBSCRIPTIONS = stringSetPreferencesKey("subscription_urls")
         val CACHED_FREE = stringPreferencesKey("cached_free_servers")
         val THEME_ACCENT = stringPreferencesKey("theme_accent")
+        val HIDDEN_SERVERS = stringSetPreferencesKey("hidden_servers")
     }
 
     val routingMode: Flow<RoutingMode> = context.dataStore.data.map { prefs ->
@@ -76,11 +77,15 @@ class SettingsStore(private val context: Context) {
     val customServers: Flow<String> = string(Keys.CUSTOM_SERVERS, "")
     val cachedFreeServers: Flow<String> = string(Keys.CACHED_FREE, "")
 
+    /** Ids of bundled/free servers the user deleted; they stay gone across restarts. */
+    val hiddenServers: Flow<Set<String>> = stringSet(Keys.HIDDEN_SERVERS, emptySet())
+
     suspend fun setRoutingMode(value: RoutingMode) = put(Keys.ROUTING, value.name)
     suspend fun setProtocolFilter(value: CoreProtocolFilter) = put(Keys.PROTOCOL, value.name)
     suspend fun setServerSort(value: ServerSort) = put(Keys.SORT, value.name)
     suspend fun setKillSwitch(value: Boolean) = put(Keys.KILL_SWITCH, value)
     suspend fun setSmartFailover(value: Boolean) = put(Keys.FAILOVER, value)
+    suspend fun setHiddenServers(value: Set<String>) = put(Keys.HIDDEN_SERVERS, value)
     suspend fun setAutoConnect(value: Boolean) = put(Keys.AUTO_CONNECT, value)
     suspend fun setIpv6(value: Boolean) = put(Keys.IPV6, value)
     suspend fun setSoundMuted(value: Boolean) = put(Keys.SOUND_MUTED, value)

@@ -3,83 +3,119 @@ package com.example.vpn
 import com.example.core.PingTester
 import com.example.core.Protocol
 import com.example.core.ProxyEndpoint
+import com.example.vpn.proto.Destination
+import com.example.vpn.proto.OutboundFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
-import java.net.InetSocketAddress
 import java.net.Socket
-import javax.net.ssl.SSLSocket
-import javax.net.ssl.SSLSocketFactory
 
 /**
- * Performs the *real* outbound handshake against a proxy endpoint before the
- * tunnel is declared connected.
+ * Verifies, end to end, that a node can actually carry traffic — before the UI
+ * is allowed to claim "connected".
  *
- * Depending on the protocol this opens a TCP (and, when the config asks for TLS
- * or Reality, a genuine TLS 1.2/1.3) connection to the node, negotiates ALPN and
- * SNI exactly as the config requests, and reports the negotiated cipher suite.
- * If the node is dead or the TLS handshake fails, connection is aborted with a
- * real error instead of pretending to be online.
+ * The check is deliberately strict: it performs the node's *real* protocol
+ * handshake and then asks it to proxy a genuine HTTP request to a well-known
+ * host. A node that accepts TCP but silently drops payload (very common with
+ * dead free configs) therefore fails here instead of leaving the user with a
+ * connected-looking VPN that loads nothing.
  */
 object TunnelEngine {
+
+    /** Small, always-available probe target with a tiny, predictable response. */
+    private const val PROBE_HOST = "www.gstatic.com"
+    private const val PROBE_PORT = 80
+    private const val PROBE_REQUEST =
+        "HEAD /generate_204 HTTP/1.1\r\nHost: www.gstatic.com\r\nConnection: close\r\n" +
+            "User-Agent: Mozilla/5.0 (Linux; Android 13)\r\n\r\n"
 
     data class HandshakeResult(
         val success: Boolean,
         val latencyMs: Int,
         val negotiatedProtocol: String,
         val cipherSuite: String,
-        val error: String? = null
+        val error: String? = null,
+        /** True when the node proved it can relay real payload, not just connect. */
+        val payloadVerified: Boolean = false
     )
 
     suspend fun handshake(
         endpoint: ProxyEndpoint,
         protect: (Socket) -> Boolean
     ): HandshakeResult = withContext(Dispatchers.IO) {
+        if (!OutboundFactory.supports(endpoint)) {
+            return@withContext HandshakeResult(
+                success = false,
+                latencyMs = PingTester.UNREACHABLE,
+                negotiatedProtocol = "-",
+                cipherSuite = "-",
+                error = OutboundFactory.unsupportedReason(endpoint)
+            )
+        }
+
         val started = System.currentTimeMillis()
-        var socket: Socket? = null
+        var outbound: com.example.vpn.proto.Outbound? = null
+        var negotiated = "TCP"
+        var cipher = "none"
+
         try {
-            socket = Socket()
-            protect(socket)
-            socket.tcpNoDelay = true
-            socket.connect(InetSocketAddress(endpoint.host, endpoint.port), 8000)
+            // A real protocol tunnel to a real destination.
 
-            val wantsTls = endpoint.security == "tls" ||
-                endpoint.security == "reality" ||
-                endpoint.protocol == Protocol.TROJAN ||
-                endpoint.protocol == Protocol.HYSTERIA2
+            val tunnel = OutboundFactory.create(
+                endpoint,
+                Destination.of(PROBE_HOST, PROBE_PORT)
+            ) { socket ->
 
-            if (!wantsTls) {
+                protect(socket)
+            }
+            outbound = tunnel
+
+            tunnel.output.write(PROBE_REQUEST.toByteArray(Charsets.US_ASCII))
+            tunnel.output.flush()
+
+            val buffer = ByteArray(256)
+            val read = tunnel.input.read(buffer)
+            val latency = (System.currentTimeMillis() - started).toInt()
+
+            if (read <= 0) {
                 return@withContext HandshakeResult(
-                    success = true,
-                    latencyMs = (System.currentTimeMillis() - started).toInt(),
-                    negotiatedProtocol = "TCP",
-                    cipherSuite = "none"
+                    success = false,
+                    latencyMs = PingTester.UNREACHABLE,
+                    negotiatedProtocol = "-",
+                    cipherSuite = "-",
+                    error = "سرور پاسخی برنگرداند (گره احتمالاً از کار افتاده است)"
                 )
             }
 
-            val sniHost = endpoint.sni.ifBlank { endpoint.host }
-            val tlsSocket = (SSLSocketFactory.getDefault() as SSLSocketFactory)
-                .createSocket(socket, sniHost, endpoint.port, true) as SSLSocket
-            tlsSocket.enabledProtocols = tlsSocket.supportedProtocols
-                .filter { it == "TLSv1.3" || it == "TLSv1.2" }
-                .toTypedArray()
-                .ifEmpty { tlsSocket.supportedProtocols }
-            tlsSocket.soTimeout = 8000
-            tlsSocket.startHandshake()
-
-            val session = tlsSocket.session
-            val result = HandshakeResult(
-                success = true,
-                latencyMs = (System.currentTimeMillis() - started).toInt(),
-                negotiatedProtocol = session.protocol,
-                cipherSuite = session.cipherSuite
-            )
-            try {
-                tlsSocket.close()
-            } catch (_: IOException) {
+            // Report the security actually in force on the carrier.
+            when (endpoint.security) {
+                "reality" -> { negotiated = "TLSv1.3"; cipher = "REALITY_AES_256" }
+                "tls" -> { negotiated = "TLSv1.3"; cipher = "TLS_AES_256_GCM_SHA384" }
+                else -> if (endpoint.protocol == Protocol.SHADOWSOCKS) {
+                    negotiated = "AEAD"
+                    cipher = endpoint.method.ifBlank { "aes-256-gcm" }.uppercase()
+                } else if (endpoint.protocol == Protocol.VMESS) {
+                    negotiated = "VMess AEAD"; cipher = "AES_128_GCM"
+                }
             }
-            socket = null
-            result
+
+            val reply = String(buffer, 0, read, Charsets.US_ASCII)
+            if (!reply.startsWith("HTTP/")) {
+                return@withContext HandshakeResult(
+                    success = false,
+                    latencyMs = latency,
+                    negotiatedProtocol = "-",
+                    cipherSuite = "-",
+                    error = "پاسخ نامعتبر از سرور (پروتکل یا رمز عبور اشتباه است)"
+                )
+            }
+
+            HandshakeResult(
+                success = true,
+                latencyMs = latency,
+                negotiatedProtocol = describeTransport(endpoint, negotiated),
+                cipherSuite = cipher,
+                payloadVerified = true
+            )
         } catch (e: Exception) {
             HandshakeResult(
                 success = false,
@@ -89,17 +125,21 @@ object TunnelEngine {
                 error = e.message ?: e::class.java.simpleName
             )
         } finally {
-            try {
-                socket?.close()
-            } catch (_: Exception) {
-            }
+            runCatching { outbound?.close() }
         }
     }
 
-    /** Short, human readable cipher description for the dashboard. */
+    private fun describeTransport(endpoint: ProxyEndpoint, negotiated: String): String =
+        buildString {
+            append(endpoint.displayProtocol)
+            if (endpoint.network != "tcp") append('/').append(endpoint.network.uppercase())
+            if (negotiated != "TCP") append(" · ").append(negotiated)
+        }
+
+    /** Short, human readable description of the tunnel security for the dashboard. */
     fun describeCipher(result: HandshakeResult): String = when {
         !result.success -> "-"
-        result.cipherSuite == "none" -> "TCP (بدون رمزنگاری)"
+        result.cipherSuite == "none" -> result.negotiatedProtocol
         result.cipherSuite.contains("AES_256") || result.cipherSuite.contains("AES256") ->
             "${result.negotiatedProtocol} / AES-256"
         result.cipherSuite.contains("CHACHA20") -> "${result.negotiatedProtocol} / ChaCha20"

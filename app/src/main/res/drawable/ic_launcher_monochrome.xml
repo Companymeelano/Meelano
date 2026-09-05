@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Themed-icon (Android 13+) silhouette: a shield enclosing the MeeLano "M".
+  Single-colour by design — the system tints it to match the user's wallpaper.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Shield outline -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,26 L78,35 L78,55 C78,68 68,78 54,84 C40,78 30,68 30,55 L30,35 Z" />
+
+    <!-- The M, punched out of the shield -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="5.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M42,68 L42,45 L54,58 L66,45 L66,68" />
+</vector>

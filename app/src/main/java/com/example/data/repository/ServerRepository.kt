@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import com.example.core.ConfigParser
 import com.example.core.PingTester
+import com.example.vpn.proto.OutboundFactory
 import com.example.core.Protocol
 import com.example.core.ProxyEndpoint
 import com.example.data.model.BypassApp
@@ -57,6 +58,9 @@ class ServerRepository(
     private val _bypassApps = MutableStateFlow<List<BypassApp>>(emptyList())
     val bypassApps: StateFlow<List<BypassApp>> = _bypassApps.asStateFlow()
 
+    /** Server ids the user deleted; filtered out of every list and never re-added. */
+    private var hidden: MutableSet<String> = mutableSetOf()
+
     private val _updateProgress = MutableStateFlow<UpdateProgress?>(null)
     val updateProgress: StateFlow<UpdateProgress?> = _updateProgress.asStateFlow()
 
@@ -68,11 +72,16 @@ class ServerRepository(
 
     suspend fun restore() {
         val favorites = settings.favorites.first()
+        hidden = settings.hiddenServers.first().toMutableSet()
         _customServers.value = decodeServers(settings.customServers.first(), isVip = false)
+            .filterNot { it.id in hidden }
             .map { it.copy(isFavorite = it.id in favorites) }
         _freeServers.value = decodeServers(settings.cachedFreeServers.first(), isVip = false)
+            .filterNot { it.id in hidden }
             .map { it.copy(isFavorite = it.id in favorites) }
-        _vipServers.value = _vipServers.value.map { it.copy(isFavorite = it.id in favorites) }
+        _vipServers.value = _vipServers.value
+            .filterNot { it.id in hidden }
+            .map { it.copy(isFavorite = it.id in favorites) }
 
         val selectedId = settings.selectedServerId.first()
         allServers().firstOrNull { it.id == selectedId }?.let { selectServerInternal(it) }
@@ -192,7 +201,13 @@ class ServerRepository(
                 )
             }
 
-            val candidates = endpoints.values.toList().take(220)
+            // Only keep nodes whose protocol this build can genuinely carry — a
+            // node we cannot speak to is worse than no node at all.
+            val candidates = endpoints.values
+                .filter { OutboundFactory.supports(it) }
+                .filterNot { "free_${it.host}_${it.port}" in hidden }
+                .toList()
+                .take(220)
             _updateProgress.value = UpdateProgress("تست پینگ ${candidates.size} نود…", 0, candidates.size)
             val latencies = PingTester.pingAll(
                 items = candidates,
@@ -291,10 +306,41 @@ class ServerRepository(
         return endpoints.size
     }
 
-    suspend fun deleteCustomServer(server: VpnServer) {
-        val remaining = _customServers.value.filterNot { it.id == server.id }
-        _customServers.value = remaining
-        settings.setCustomServers(encodeServers(remaining))
+    suspend fun deleteCustomServer(server: VpnServer) = deleteServer(server)
+
+    /**
+     * Removes a server from whichever list it lives in — VIP, free or imported —
+     * and remembers the deletion so a later refresh does not resurrect it.
+     */
+    suspend fun deleteServer(server: VpnServer) {
+        hidden.add(server.id)
+        settings.setHiddenServers(hidden)
+
+        _customServers.value = _customServers.value.filterNot { it.id == server.id }
+        _freeServers.value = _freeServers.value.filterNot { it.id == server.id }
+        _vipServers.value = _vipServers.value.filterNot { it.id == server.id }
+
+        settings.setCustomServers(encodeServers(_customServers.value))
+        settings.setCachedFreeServers(encodeServers(_freeServers.value))
+
+        // If the deleted node was selected, fall back to any remaining server.
+        if (_activeServer.value.id == server.id) {
+            allServers().firstOrNull()?.let { selectServer(it) }
+        }
+    }
+
+    /** Deletes every server that failed its last reachability test. */
+    suspend fun deleteUnreachable(): Int {
+        val dead = allServers().filter { it.pingMs >= PingTester.UNREACHABLE }
+        dead.forEach { deleteServer(it) }
+        return dead.size
+    }
+
+    /** Restores every previously deleted bundled/free server. */
+    suspend fun restoreDeleted() {
+        hidden.clear()
+        settings.setHiddenServers(emptySet())
+        _vipServers.value = BundledServers.vip
     }
 
     // endregion

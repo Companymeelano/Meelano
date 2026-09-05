@@ -42,6 +42,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,6 +99,19 @@ fun ServerListModal(
 ) {
     val accent = LocalAccent.current.primary
     var tab by remember { mutableIntStateOf(0) }
+    var pendingDelete by remember { mutableStateOf<VpnServer?>(null) }
+
+    pendingDelete?.let { target ->
+        DeleteServerDialog(
+            server = target,
+            accent = accent,
+            onConfirm = {
+                onDeleteCustom(target)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null }
+        )
+    }
     val list = when (tab) {
         0 -> vipServers
         1 -> freeServers
@@ -267,12 +282,12 @@ fun ServerListModal(
                                 server = server,
                                 isActive = server.id == activeServer.id,
                                 accent = accent,
-                                canDelete = tab == 2,
+                                canDelete = true,
                                 onSelect = { onSelectServer(server) },
                                 onShowQr = { onShowQr(server) },
                                 onSmartImport = { onSmartImport(server) },
                                 onToggleFavorite = { onToggleFavorite(server) },
-                                onDelete = { onDeleteCustom(server) }
+                                onDelete = { pendingDelete = server }
                             )
                         }
                     }
@@ -461,5 +476,80 @@ private fun EmptyState(tab: Int, onRefresh: () -> Unit, onImport: () -> Unit) {
             color = MeelanoGreenSuccess,
             modifier = Modifier.width(220.dp)
         ) { if (tab == 1) onRefresh() else onImport() }
+    }
+}
+
+
+/** Confirmation before a server is permanently removed. */
+@Composable
+private fun DeleteServerDialog(
+    server: VpnServer,
+    accent: Color,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        GlassCard(corner = 22.dp, padding = 20.dp) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .size(58.dp)
+                        .background(MeelanoRedKillSwitch.copy(alpha = 0.14f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MeelanoRedKillSwitch,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "حذف سرور",
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "«${server.name}» برای همیشه از لیست حذف می‌شود. مطمئن هستید؟",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 19.sp
+                )
+                Spacer(Modifier.height(18.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
+                            .clickable(onClick = onDismiss),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("انصراف", color = Color.White, fontSize = 14.sp)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MeelanoRedKillSwitch)
+                            .clickable(onClick = onConfirm),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "حذف",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
     }
 }

@@ -43,6 +43,8 @@ class DnsRelay(
 
         for (server in upstreamServers) {
             val answer = resolve(server, request.payload) ?: continue
+            // Learn domain -> IP so proxied TCP flows can be dialled by hostname.
+            if (domain != null) learnAnswers(domain, answer)
             tunOutput.write(IpPacket.buildUdpResponse(request, answer))
             queriesHandled.incrementAndGet()
             bytesOut.addAndGet(request.payload.size.toLong())
@@ -93,6 +95,60 @@ class DnsRelay(
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Walks the answer section of a DNS response and records every A record, so
+     * [com.example.vpn.stack.DnsMap] can later turn a destination IP back into
+     * the hostname the app originally asked for.
+     */
+    fun learnAnswers(domain: String, response: ByteArray) {
+        try {
+            if (response.size < 12) return
+            val questions = IpPacket.readUShort(response, 4)
+            val answers = IpPacket.readUShort(response, 6)
+            if (answers <= 0) return
+
+            var index = 12
+            // Skip the question section.
+            repeat(questions) {
+                index = skipName(response, index)
+                index += 4                        // QTYPE + QCLASS
+            }
+
+            repeat(answers) {
+                if (index + 10 > response.size) return
+                index = skipName(response, index)
+                if (index + 10 > response.size) return
+                val type = IpPacket.readUShort(response, index)
+                val dataLength = IpPacket.readUShort(response, index + 8)
+                index += 10
+                if (index + dataLength > response.size) return
+                if (type == 1 && dataLength == 4) {
+                    val ip = (0 until 4).joinToString(".") {
+                        (response[index + it].toInt() and 0xFF).toString()
+                    }
+                    com.example.vpn.stack.DnsMap.remember(domain, ip)
+                }
+                index += dataLength
+            }
+        } catch (_: Exception) {
+            // A malformed answer must never break resolution.
+        }
+    }
+
+    /** Skips a (possibly compressed) DNS name and returns the following offset. */
+    private fun skipName(data: ByteArray, start: Int): Int {
+        var index = start
+        while (index < data.size) {
+            val length = data[index].toInt() and 0xFF
+            when {
+                length == 0 -> return index + 1
+                length and 0xC0 == 0xC0 -> return index + 2   // compression pointer
+                else -> index += length + 1
+            }
+        }
+        return index
     }
 
     /** Builds a NAME-ERROR (RCODE 3) response for the given query. */

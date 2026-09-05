@@ -20,6 +20,8 @@ import com.example.vpn.net.IpPacket
 import com.example.vpn.net.RouteTable
 import com.example.vpn.net.TrafficCounter
 import com.example.vpn.net.UdpNat
+import com.example.vpn.stack.DnsMap
+import com.example.vpn.stack.TcpStack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -94,6 +96,8 @@ class MeelanoVpnService : VpnService() {
     private var statsJob: Job? = null
     private var tunnelJob: Job? = null
     private var udpNat: UdpNat? = null
+    private var stack: TcpStack? = null
+    private var activeEndpoint: ProxyEndpoint? = null
     private var counter: TrafficCounter? = null
     private var sessionStartedAt = 0L
     private var activeServerName: String = ""
@@ -161,6 +165,7 @@ class MeelanoVpnService : VpnService() {
                     fail("کانفیگ سرور نامعتبر است (لینک قابل تجزیه نیست)")
                     return@launch
                 }
+                activeEndpoint = endpoint
                 log("Endpoint resolved → ${endpoint.summary()}")
 
                 // ---- real outbound handshake ----
@@ -266,6 +271,20 @@ class MeelanoVpnService : VpnService() {
         val input = FileInputStream(descriptor.fileDescriptor)
         val output = FileOutputStream(descriptor.fileDescriptor)
         val trafficCounter = counter ?: return
+        val endpoint = activeEndpoint ?: return
+
+        // The userspace TCP stack: terminates app sockets and proxies them for real.
+        val tunLock = Any()
+        val tcpStack = TcpStack(
+            endpoint = endpoint,
+            protect = { protect(it) },
+            writeToTun = { packet ->
+                synchronized(tunLock) { output.write(packet) }
+            },
+            log = { log(it) }
+        )
+        stack = tcpStack
+        log("TCP stack online · outbound = ${endpoint.displayProtocol}")
 
         val dnsRelay = DnsRelay(
             upstreamServers = listOf(request.dnsPrimary, request.dnsSecondary),
@@ -307,14 +326,17 @@ class MeelanoVpnService : VpnService() {
                             if (!handled) nat.forward(udp)
                         }
                     }
-                    // TCP flows are carried by the kernel through the tunnel route set;
-                    // they are accounted here and delivered by the established uplink.
-                    IpPacket.PROTO_TCP -> Unit
+                    // Every TCP flow is terminated locally and carried through the
+                    // proxy tunnel by the userspace stack. This is what actually
+                    // makes HTTPS sites (Instagram, YouTube, …) load.
+                    IpPacket.PROTO_TCP -> stack?.handlePacket(buffer, read)
                     else -> Unit
                 }
             }
         } finally {
             nat.shutdown()
+            tcpStack.shutdown()
+            stack = null
         }
     }
 
@@ -434,7 +456,7 @@ class MeelanoVpnService : VpnService() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("MeeLano Tunnel${if (serverName.isBlank()) "" else " · $serverName"}")
             .setContentText(statusText)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_shield)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

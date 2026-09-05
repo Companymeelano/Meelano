@@ -31,6 +31,9 @@ class MainViewModel(
     val securityManager: SecurityManager
 ) : ViewModel() {
 
+    /** Application context remembered from the last connect, for auto-retry. */
+    private var appContext: Context? = null
+
     // ---- tunnel state ----
     val connectionState: StateFlow<VpnConnectionState> = MeelanoVpnService.connectionState
     val liveStats: StateFlow<NetworkLiveStats> = MeelanoVpnService.liveStats
@@ -137,6 +140,7 @@ class MainViewModel(
     }
 
     fun startVpn(context: Context) {
+        appContext = context.applicationContext
         viewModelScope.launch {
             val server = activeServer.value
             val bypass = ArrayList(bypassApps.value.filter { it.isBypassed }.map { it.packageName })
@@ -164,22 +168,80 @@ class MainViewModel(
         )
     }
 
-    /** Smart failover: if the tunnel fails while enabled, switch to the fastest live node. */
+    /**
+     * Smart failover: when a tunnel dies, walk the server list by latency and
+     * actually *re-dial* until one of them carries traffic. This is what lets the
+     * app stay online when individual nodes are blocked or overloaded.
+     */
     private fun watchForDrops() {
         viewModelScope.launch {
             connectionState.collect { state ->
-                if (state == VpnConnectionState.FAILED && smartFailoverEnabled.value) {
-                    MeelanoVpnService.log("Smart Failover: searching for a healthy node…")
-                    val fastest = repository.fastestServer()
-                    if (fastest != null && fastest.id != activeServer.value.id) {
-                        repository.selectServer(fastest)
-                        _toast.value = "سرور به ${fastest.name} تغییر کرد (Failover)"
-                        MeelanoVpnService.log("Smart Failover → ${fastest.name} (${fastest.pingMs}ms)")
-                    } else {
-                        MeelanoVpnService.log("Smart Failover: no healthy node available")
-                    }
+                if (state == VpnConnectionState.CONNECTED) triedServerIds.clear()
+                if (state == VpnConnectionState.FAILED && smartFailoverEnabled.value && !isFailingOver) {
+                    failover()
                 }
             }
+        }
+    }
+
+    /** Guards against re-entrancy while a cascade is already running. */
+    private var isFailingOver = false
+    private val triedServerIds = mutableSetOf<String>()
+
+    private suspend fun failover() {
+        val context = appContext ?: return
+        isFailingOver = true
+        try {
+            triedServerIds.add(activeServer.value.id)
+            MeelanoVpnService.log("Smart Failover: searching for a healthy node…")
+
+            val ranked = repository.allServers()
+                .filterNot { it.id in triedServerIds }
+                .filter { it.pingMs > 0 && it.pingMs < com.example.core.PingTester.UNREACHABLE }
+                .sortedBy { it.pingMs }
+
+            val candidates = ranked.ifEmpty {
+                repository.allServers().filterNot { it.id in triedServerIds }
+            }
+
+            if (candidates.isEmpty()) {
+                triedServerIds.clear()
+                _toast.value = "هیچ سرور سالمی پیدا نشد؛ لطفاً لیست را به‌روزرسانی کنید"
+                MeelanoVpnService.log("Smart Failover: exhausted every known node")
+                return
+            }
+
+            val next = candidates.first()
+            triedServerIds.add(next.id)
+            repository.selectServer(next)
+            _toast.value = "تلاش مجدد با ${next.name} (Failover)"
+            MeelanoVpnService.log("Smart Failover → ${next.name} (${next.pingMs}ms)")
+            delay(700)
+            startVpn(context)
+        } finally {
+            isFailingOver = false
+        }
+    }
+
+    /**
+     * "Best effort" connect: pings everything, then tries nodes in order of
+     * latency until one genuinely carries traffic.
+     */
+    fun connectWithBestEffort(context: Context, onNeedsPermission: () -> Unit) {
+        viewModelScope.launch {
+            triedServerIds.clear()
+            _isTestingPing.value = true
+            _toast.value = "در حال یافتن بهترین مسیر…"
+            repository.testPings(ServerRepository.ServerScope.ALL)
+            val fastest = repository.fastestServer()
+            _isTestingPing.value = false
+            if (fastest == null) {
+                _toast.value = "هیچ سرور در دسترسی پیدا نشد"
+                return@launch
+            }
+            repository.selectServer(fastest)
+            _toast.value = "اتصال به ${fastest.name} · ${fastest.pingMs}ms"
+            requestToggle(context, onNeedsPermission)
         }
     }
 
@@ -214,10 +276,29 @@ class MainViewModel(
         viewModelScope.launch { repository.toggleFavorite(server) }
     }
 
-    fun deleteCustomServer(server: VpnServer) {
+    fun deleteCustomServer(server: VpnServer) = deleteServer(server)
+
+    /** Deletes any server — VIP, free or imported — permanently. */
+    fun deleteServer(server: VpnServer) {
         viewModelScope.launch {
-            repository.deleteCustomServer(server)
-            _toast.value = "سرور حذف شد"
+            repository.deleteServer(server)
+            _toast.value = "«${server.name}» حذف شد"
+        }
+    }
+
+    /** Sweeps every node that failed its last reachability test. */
+    fun deleteUnreachableServers() {
+        viewModelScope.launch {
+            val removed = repository.deleteUnreachable()
+            _toast.value = if (removed > 0) "$removed سرور خراب حذف شد" else "سرور خرابی پیدا نشد"
+        }
+    }
+
+    /** Brings back the built-in servers the user previously deleted. */
+    fun restoreDeletedServers() {
+        viewModelScope.launch {
+            repository.restoreDeleted()
+            _toast.value = "سرورهای پیش‌فرض بازگردانده شد"
         }
     }
 
