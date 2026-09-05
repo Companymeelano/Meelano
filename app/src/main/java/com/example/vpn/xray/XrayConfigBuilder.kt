@@ -92,13 +92,11 @@ object XrayConfigBuilder {
             JSONArray().apply {
                 put(primary)
                 put(secondary)
-                // Domestic names resolve faster and more reliably via a local
-                // resolver, and routing them abroad is a privacy leak besides.
-                put(
-                    JSONObject()
-                        .put("address", "223.5.5.5")
-                        .put("domains", JSONArray().put("geosite:cn"))
-                )
+                // Deliberately no geosite rules. They would pull in an 8 MB
+                // domain database to serve a split this app's users do not
+                // need, and a missing database makes such rules match nothing
+                // silently rather than failing loudly.
+                put("localhost")
             }
         )
 
@@ -441,9 +439,13 @@ object XrayConfigBuilder {
                     .put("outboundTag", "direct")
                     .put(
                         "ip",
+                        // Explicit CIDRs rather than geoip:private, so private
+                        // ranges bypass the tunnel without needing an 18 MB
+                        // database on disk.
                         JSONArray()
-                            .put("geoip:private")
                             .put("127.0.0.0/8")
+                            .put("169.254.0.0/16")
+                            .put("100.64.0.0/10")
                             .put("10.0.0.0/8")
                             .put("172.16.0.0/12")
                             .put("192.168.0.0/16")

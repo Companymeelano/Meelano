@@ -47,29 +47,17 @@ object XrayCore {
     }
 
     /**
-     * Unpacks `geoip.dat`/`geosite.dat` and points the core at them.
+     * Prepares the core's environment.
      *
-     * Routing rules such as `geoip:private` silently fail to match without these
-     * files, which would send local traffic through the tunnel.
+     * No geo databases are unpacked: the generated config uses explicit CIDRs
+     * and plain resolvers instead of geoip/geosite rules, which kept 27 MB of
+     * lookup tables out of the APK. The asset directory is still registered
+     * because the core expects a writable path for its certificate store.
      */
     fun initialise(context: Context) {
         if (!isAvailable) return
 
         val assetDir = File(context.filesDir, "xray").apply { mkdirs() }
-        listOf("geoip.dat", "geosite.dat").forEach { name ->
-            val target = File(assetDir, name)
-            if (!target.exists()) {
-                runCatching {
-                    context.assets.open(name).use { input ->
-                        target.outputStream().use { input.copyTo(it) }
-                    }
-                }.onFailure {
-                    // Not fatal: the core still routes, it just cannot resolve
-                    // geo rules, so say so plainly instead of failing silently.
-                    Log.w(TAG, "Could not unpack $name — geo routing rules will not match", it)
-                }
-            }
-        }
 
         runCatching {
             val clazz = Class.forName("libv2ray.Libv2ray")

@@ -49,15 +49,6 @@ jobs:
           fi
           unzip -l app/libs/libv2ray.aar | head -5
 
-          # Routing rules such as geoip:private silently match nothing without
-          # these, which would push LAN traffic through the tunnel.
-          mkdir -p app/src/main/assets
-          for f in geoip.dat geosite.dat; do
-            curl -fsSL --retry 4 --retry-delay 5 \
-              -o "app/src/main/assets/$f" \
-              "https://raw.githubusercontent.com/2dust/AndroidLibXrayLite/master/assets/$f"
-            echo "$f = $(stat -c%s app/src/main/assets/$f) bytes"
-          done
 
       - name: Generate Gradle wrapper (if missing)
         run: |

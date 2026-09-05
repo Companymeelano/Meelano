@@ -138,7 +138,9 @@ class XrayConfigBuilderTest {
                 val ips = buildList {
                     for (j in 0 until (array?.length() ?: 0)) add(array!!.getString(j))
                 }
-                if (ips.contains("geoip:private") && ips.contains("192.168.0.0/16")) {
+                // Explicit CIDRs, not geoip:private — the geo databases were
+                // dropped to keep 27 MB out of the APK.
+                if (ips.contains("192.168.0.0/16") && ips.contains("10.0.0.0/8")) {
                     sawPrivateDirect = true
                 }
             }
