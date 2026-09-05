@@ -306,6 +306,7 @@ fun MainDashboardScreen(
                         remoteHost = liveStats.remoteHost,
                         protocol = if (isConnected) liveStats.activeProtocol else activeServer.protocol,
                         encryption = liveStats.encryption,
+                        engine = liveStats.engine,
                         dnsQueries = liveStats.dnsQueries,
                         flows = liveStats.activeFlows,
                         uptime = liveStats.uptimeLabel,
@@ -679,6 +680,7 @@ private fun NetworkStatusPanel(
     remoteHost: String,
     protocol: String,
     encryption: String,
+    engine: String,
     dnsQueries: Long,
     flows: Int,
     uptime: String,
@@ -712,6 +714,7 @@ private fun NetworkStatusPanel(
                     InfoRow("نود خروجی", remoteHost)
                     InfoRow("پروتکل", protocol)
                     InfoRow("رمزنگاری", encryption)
+                    InfoRow("موتور", engine)
                 }
             }
         }

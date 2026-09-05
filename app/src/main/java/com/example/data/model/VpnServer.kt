@@ -121,6 +121,8 @@ data class NetworkLiveStats(
     val tunnelIp: String = "-",
     val encryption: String = "-",
     val activeProtocol: String = "-",
+    /** Which engine is carrying this tunnel, so failures can be reported precisely. */
+    val engine: String = "-",
     val remoteHost: String = "-",
     val dnsQueries: Long = 0,
     val activeFlows: Int = 0,

@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import com.example.vpn.proto.OutboundFactory
 import com.example.vpn.xray.XrayConfigBuilder
 import com.example.vpn.xray.XrayCore
 import kotlinx.coroutines.awaitCancellation
@@ -234,13 +235,40 @@ class MeelanoVpnService : VpnService() {
                 // the core is present it takes anything it supports; the Kotlin
                 // engine remains the fallback so the app still works if the AAR
                 // is missing from a build.
+                // Engine selection.
+                //
+                // The Kotlin engine's protocol set is a strict subset of the
+                // core's, so it is a genuine fallback rather than an
+                // alternative: it runs only when the AAR is absent from a build,
+                // or for the rare node the core declines. Saying which engine is
+                // in use — and why — is what turns a mysterious failure into a
+                // reportable one.
                 val useXray = XrayCore.isAvailable && XrayConfigBuilder.isSupported(endpoint)
-                if (useXray) {
-                    log("Engine: Xray core ${XrayCore.version().orEmpty()}")
-                } else if (XrayCore.isAvailable) {
-                    log("Engine: built-in (Xray cannot carry ${endpoint.displayProtocol})")
-                } else {
-                    log("Engine: built-in Kotlin tunnel")
+                when {
+                    useXray ->
+                        log("Engine: Xray core ${XrayCore.version().orEmpty()}")
+
+                    XrayCore.isAvailable -> {
+                        log(
+                            "Engine: built-in fallback — the core declined " +
+                                "${endpoint.displayProtocol}"
+                        )
+                        if (!OutboundFactory.supports(endpoint)) {
+                            fail(OutboundFactory.unsupportedReason(endpoint))
+                            return@launch
+                        }
+                    }
+
+                    else -> {
+                        // No core in this build at all. Fail loudly for anything
+                        // the Kotlin engine cannot carry, rather than attempting
+                        // a handshake that cannot possibly succeed.
+                        log("Engine: built-in Kotlin tunnel (Xray core not bundled)")
+                        if (!OutboundFactory.supports(endpoint)) {
+                            fail(OutboundFactory.unsupportedReason(endpoint))
+                            return@launch
+                        }
+                    }
                 }
 
                 // ---- real outbound handshake ----
@@ -298,6 +326,7 @@ class MeelanoVpnService : VpnService() {
                     tunnelIp = "172.19.0.1",
                     encryption = handshake?.let { TunnelEngine.describeCipher(it) }
                         ?: "Xray · ${endpoint.displayProtocol}",
+                    engine = if (useXray) "Xray" else "Built-in",
                     activeProtocol = endpoint.displayProtocol,
                     pingMs = handshake?.latencyMs ?: 0,
                     remoteHost = if (request.whiteLabel) {
