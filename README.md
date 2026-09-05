@@ -15,7 +15,10 @@
 | Capability | Implementation |
 |---|---|
 | **Real tunnel** | `MeelanoVpnService` establishes a genuine TUN interface, reads/writes packets, and reports honest state (`FAILED` when a node is dead — never a fake "connected"). |
-| **Real handshake** | `TunnelEngine` opens a TCP + TLS 1.2/1.3 connection to the selected node with the config's SNI, and reports the *negotiated* cipher suite. |
+| **Userspace TCP stack** | `TcpStack` / `TcpConnection` terminate every app socket in userspace, synthesise SYN-ACK/ACK/FIN/RST with correct IPv4+TCP checksums, and pump the payload through a real proxy tunnel. This is what makes HTTPS sites actually load. |
+| **Real protocol outbounds** | Full wire implementations of **VLESS**, **Trojan**, **Shadowsocks AEAD** (`aes-128/256-gcm`, `chacha20-ietf-poly1305`), **VMess** (AEAD request header) and **SOCKS5**, over **TCP / TLS / WebSocket** transports. |
+| **Real handshake** | `TunnelEngine` performs the node's genuine protocol handshake and then proxies a live HTTP probe: a node that accepts TCP but cannot relay payload is rejected instead of showing a fake "connected". |
+| **Domain-aware dialling** | `DnsRelay` learns A records and `DnsMap` maps destination IPs back to hostnames, so flows are dialled by **domain**. The exit node resolves them itself, which defeats DNS poisoning and lands on healthy CDN edges. |
 | **Config parsing** | `ConfigParser` parses `vmess://`, `vless://` (incl. Reality), `trojan://`, `ss://`, `hy2://`, `socks://` and whole base64 subscription blobs. |
 | **Real latency** | `PingTester` does concurrent TCP handshakes. Unreachable nodes report "قطع" and sink to the bottom of the list. |
 | **Real routing** | `RouteTable` computes `0.0.0.0/0` minus ~330 Iranian + private CIDR blocks and installs the resulting route set on the builder, so domestic traffic genuinely bypasses the tunnel at kernel level. |
@@ -24,7 +27,8 @@
 | **Real traffic stats** | `TrafficCounter` sums bytes crossing the TUN fd, cross-checked against `TrafficStats` per-uid counters. Speeds are derived from wall-clock deltas. |
 | **Split tunnelling** | Reads the device's actually-installed launchable apps and feeds them to `addDisallowedApplication`. |
 | **Kill switch** | Puts the TUN interface in blocking mode so nothing leaks while the tunnel is down. |
-| **Smart failover** | On failure, TCP-pings every known node and switches to the fastest live one. |
+| **Smart failover** | On failure, walks the latency-ranked node list and genuinely **re-dials** each one until traffic flows, never repeating a node that already failed this session. |
+| **Server management** | Delete any server (VIP, free or imported) with confirmation; deletions persist so a refresh never resurrects them. Plus one-tap "sweep unreachable" and "restore defaults". |
 | **Subscriptions** | Downloads real GitHub subscription URLs, parses, dedupes, pings in parallel and keeps only the fastest reachable nodes; results are cached to disk. |
 | **Scannable QR** | ZXing-generated QR of the actual share link — importable by v2rayNG / V2Box / Hiddify. |
 | **Security** | Salted SHA-256 (5 000 rounds) PIN with brute-force lockout, plus the platform `BiometricPrompt` (unlock only on the OS success callback). |
@@ -32,7 +36,11 @@
 
 ## Design
 
-A dark "aurora" canvas with drifting blooms, a procedural hex grid and a star field; frosted-glass cards with gradient hairline borders; a layered energy-orb power button whose ring speed and glow follow the real tunnel state; a live packet-flow radar; and a smoothed throughput spline. Four selectable accent themes (نئون / زمرد / بنفش / طلایی) and full RTL layout.
+A dark "aurora" canvas with drifting blooms, a procedural hex grid and a star field; frosted-glass cards with gradient hairline borders; a layered energy-orb power button whose ring speed and glow follow the real tunnel state; a live packet-flow radar; and a smoothed throughput spline. **Six** selectable accent themes (نئون / زمرد / بنفش / طلایی / غروب / شفق قطبی) and full RTL layout.
+
+The launcher icon is a ray-traced 3D obsidian-glass shield holding a neon "M", shipped as a proper **adaptive icon** (separate background/foreground layers so it animates and masks correctly on every launcher shape), with legacy square/round bitmaps for pre-Oreo devices and a **themed monochrome** layer for Android 13+ wallpaper tinting.
+
+`PremiumUi.kt` adds the shared polish: accent badges, fading dividers, shimmer placeholders, glow progress bars, a live equaliser and a sweep-gradient circular gauge.
 
 ## Build
 
@@ -72,9 +80,16 @@ SecurityManagerTest – PIN hashing, wrong-PIN handling, rotation, lockout
 
 * The VIP nodes bundled in `BundledServers` are example endpoints. Replace `configLink`
   with your own subscription/servers — the app pings and connects to whatever is really there.
-* The tunnel carries traffic through the OS route set and a userspace DNS/UDP path. Adding a
-  full Xray/sing-box core (`libcore.aar`) is the natural next step for protocol-level
-  encapsulation; every seam for it already exists in `TunnelEngine`.
+* Protocol encapsulation is implemented natively in Kotlin — no `libcore.aar` / Xray binary
+  is bundled or required. The trade-offs of that choice:
+  * **Hysteria 2 is not supported** (it needs a QUIC stack). Such nodes are filtered out of
+    the free list and rejected with a clear message rather than failing silently.
+  * VLESS **Reality** connects over TLS with certificate validation relaxed, but does not
+    perform Reality's X25519 authentication handshake, so a strict Reality server may refuse it.
+    Plain TLS and WebSocket VLESS/VMess/Trojan are fully conformant.
+  * The TCP stack implements the fast path (immediate SYN-ACK, cumulative ACK, graceful FIN,
+    RST on failure). It does not implement congestion control or selective ACK — the proxied
+    TCP socket underneath provides those end to end.
 
 ---
 
