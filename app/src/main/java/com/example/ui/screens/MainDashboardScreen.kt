@@ -75,12 +75,13 @@ import android.widget.Toast
 import com.example.data.model.ConnectionQuality
 import com.example.data.repository.ServerRepository
 import com.example.ui.components.AuroraBackground
-import com.example.ui.components.ConnectionRadar
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HealthRing
 import com.example.ui.components.MeelanoHexagonLogo
 import com.example.ui.components.Pill
-import com.example.ui.components.PowerButton3D
+import com.example.ui.components.ConnectOrb
+import com.example.ui.components.GlowDot
+import com.example.ui.components.ServerScanOverlay
 import com.example.ui.components.SectionHeader
 import com.example.ui.theme.Spacing
 import com.example.ui.components.SignalBars
@@ -116,8 +117,10 @@ fun MainDashboardScreen(
     val haptics = LocalHapticFeedback.current
     val accentPreset = LocalAccent.current
     val accent = accentPreset.primary
+    val secondary = accentPreset.secondary
     val scrollState = rememberScrollState()
 
+    val isTestingPing by viewModel.isTestingPing.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val liveStats by viewModel.liveStats.collectAsStateWithLifecycle()
     val activeServer by viewModel.activeServer.collectAsStateWithLifecycle()
@@ -161,6 +164,7 @@ fun MainDashboardScreen(
                 TopBar(
                     connectionState = connectionState,
                     accent = accent,
+                    secondary = secondary,
                     isSoundMuted = isSoundMuted,
                     onLock = { viewModel.securityManager.lock() },
                     onToggleSound = { viewModel.toggleSoundMute() }
@@ -211,24 +215,17 @@ fun MainDashboardScreen(
 
                 Spacer(Modifier.height(Spacing.Large))
 
-                PowerButton3D(
+                ConnectOrb(
                     state = connectionState,
                     accent = accent,
+                    secondary = secondary,
                     onClick = {
                         if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.requestToggle(context, onRequestVpnPermission)
                     }
                 )
 
-                Spacer(Modifier.height(Spacing.Medium))
-
-                ConnectionRadar(
-                    connected = isConnected,
-                    accent = accent,
-                    throughputMbps = liveStats.downloadMbps
-                )
-
-                Spacer(Modifier.height(Spacing.Small))
+                Spacer(Modifier.height(Spacing.Large))
 
                 LiveSpeedRow(
                     down = liveStats.downloadMbps,
@@ -272,6 +269,7 @@ fun MainDashboardScreen(
 
                     1 -> SecurityToolsPanel(
                         accent = accent,
+                        secondary = secondary,
                         routingTitle = routingMode.title,
                         routingBadge = routingMode.badge,
                         killSwitch = killSwitchEnabled,
@@ -279,6 +277,7 @@ fun MainDashboardScreen(
                         onOpenSplit = { viewModel.openSplitTunneling() },
                         onOpenLogs = { viewModel.openLogsConsole() },
                         onOpenImport = { viewModel.openImport() },
+                        onOpenServers = { viewModel.openServersModal() },
                         onToggleKillSwitch = { viewModel.toggleKillSwitch() }
                     )
 
@@ -286,22 +285,16 @@ fun MainDashboardScreen(
                 }
 
                 Spacer(Modifier.height(Spacing.Large))
-
-                SectionHeader(title = "دسترسی سریع", accent = accent)
-
-                Spacer(Modifier.height(Spacing.Medium))
-
-                QuickActionsRow(
-                    accent = accent,
-                    onSettings = { viewModel.openSettingsModal() },
-                    onServers = { viewModel.openServersModal() },
-                    onLogs = { viewModel.openLogsConsole() }
-                )
-
-                Spacer(Modifier.height(Spacing.Large))
                 Footer(accent = accent, connected = isConnected)
                 Spacer(Modifier.height(Spacing.Large))
             }
+
+            // Full-screen "finding the best route" experience.
+            ServerScanOverlay(
+                visible = isTestingPing,
+                accent = accent,
+                secondary = secondary
+            )
 
             Modals(
                 viewModel = viewModel,
@@ -318,6 +311,7 @@ fun MainDashboardScreen(
 private fun TopBar(
     connectionState: VpnConnectionState,
     accent: Color,
+    secondary: Color,
     isSoundMuted: Boolean,
     onLock: () -> Unit,
     onToggleSound: () -> Unit
@@ -333,60 +327,107 @@ private fun TopBar(
         label = "status"
     )
 
+    // Brand on one side, a single grouped utility cluster on the other. The old
+    // layout scattered three separate groups across the row, which read as
+    // clutter and gave the icons no obvious home.
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CircleIconButton(Icons.Default.Lock, "قفل امنیتی", onLock)
-            CircleIconButton(
+        // ---- utility cluster: one capsule, clearly a toolbar ----
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.05f))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape)
+                .padding(horizontal = 5.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CapsuleIcon(Icons.Default.Lock, "قفل امنیتی", accent, onLock)
+            Box(
+                Modifier
+                    .size(width = 1.dp, height = 16.dp)
+                    .background(Color.White.copy(alpha = 0.10f))
+            )
+            CapsuleIcon(
                 if (isSoundMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
                 "صدا",
+                if (isSoundMuted) TextMuted else accent,
                 onToggleSound
             )
         }
 
-        Box(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(MeelanoGoldVip.copy(alpha = 0.18f), Color.Transparent)
-                    )
-                )
-                .border(1.dp, MeelanoGoldVip.copy(alpha = 0.45f), CircleShape)
-                .padding(horizontal = 10.dp, vertical = 4.dp)
+        // ---- brand lockup: logo, name, and live status in one column ----
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
         ) {
-            Text("VIP 👑", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MeelanoGoldVip)
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Column(horizontalAlignment = Alignment.Start) {
-                Text(
-                    "MEELANO PRO",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = TextPrimary,
-                    letterSpacing = 1.sp
-                )
+            Column(horizontalAlignment = Alignment.End) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(statusColor)
+                    Text(
+                        "MEELANO",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = TextPrimary,
+                        letterSpacing = 1.5.sp
                     )
-                    Spacer(Modifier.width(4.dp))
-                    Text(connectionState.persName, fontSize = 10.sp, color = statusColor)
+                    Spacer(Modifier.width(5.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(MeelanoGoldVip.copy(alpha = 0.28f), MeelanoGoldVip.copy(alpha = 0.10f))
+                                )
+                            )
+                            .padding(horizontal = 6.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            "VIP",
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MeelanoGoldVip
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GlowDot(
+                        color = statusColor,
+                        size = 5.dp,
+                        pulsing = connectionState.isBusy
+                    )
+                    Text(
+                        connectionState.persName,
+                        fontSize = 9.sp,
+                        color = statusColor,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
             MeelanoHexagonLogo(
-                size = 42.dp,
+                size = 40.dp,
                 glowing = connectionState == VpnConnectionState.CONNECTED,
                 accent = accent
             )
         }
+    }
+}
+
+/** A compact icon button sized for the header capsule. */
+@Composable
+private fun CapsuleIcon(
+    icon: ImageVector,
+    description: String,
+    tint: Color,
+    onClick: () -> Unit
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(32.dp)
+    ) {
+        Icon(icon, description, tint = tint, modifier = Modifier.size(17.dp))
     }
 }
 
@@ -642,6 +683,7 @@ private fun InfoRow(label: String, value: String) {
 @Composable
 private fun SecurityToolsPanel(
     accent: Color,
+    secondary: Color,
     routingTitle: String,
     routingBadge: String,
     killSwitch: Boolean,
@@ -649,9 +691,18 @@ private fun SecurityToolsPanel(
     onOpenSplit: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenImport: () -> Unit,
+    onOpenServers: () -> Unit,
     onToggleKillSwitch: () -> Unit
 ) {
+    // Grouped by intent so a user can predict where a control lives:
+    //   مسیریابی  → where my traffic goes
+    //   حفاظت     → what protects me
+    //   مدیریت    → servers, configs, diagnostics
     Column(Modifier.fillMaxWidth()) {
+
+        SectionHeader(title = "مسیریابی", accent = accent)
+        Spacer(Modifier.height(Spacing.Small))
+
         GlassCard(modifier = Modifier.fillMaxWidth(), accent = accent, onClick = onOpenSettings) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -670,9 +721,12 @@ private fun SecurityToolsPanel(
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Spacing.Large))
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader(title = "حفاظت", accent = accent)
+        Spacer(Modifier.height(Spacing.Small))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
             ToolCard(
                 "Kill Switch",
                 if (killSwitch) "فعال — بدون نشتی" else "غیرفعال",
@@ -691,9 +745,33 @@ private fun SecurityToolsPanel(
             )
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Spacing.Large))
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader(title = "مدیریت", accent = accent)
+        Spacer(Modifier.height(Spacing.Small))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
+            ToolCard(
+                "سرورها",
+                "انتخاب و تست نود",
+                Icons.Default.Language,
+                accent,
+                Modifier.weight(1f),
+                onOpenServers
+            )
+            ToolCard(
+                "افزودن کانفیگ",
+                "لینک یا اشتراک جدید",
+                Icons.Default.VpnKey,
+                secondary,
+                Modifier.weight(1f),
+                onOpenImport
+            )
+        }
+
+        Spacer(Modifier.height(Spacing.Medium))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
             ToolCard(
                 "کنسول لاگ زنده",
                 "رصد بسته‌ها و خطاها",
@@ -703,12 +781,12 @@ private fun SecurityToolsPanel(
                 onOpenLogs
             )
             ToolCard(
-                "افزودن کانفیگ",
-                "لینک یا اشتراک جدید",
-                Icons.Default.VpnKey,
-                accent,
+                "تنظیمات",
+                "امنیت، DNS و ظاهر",
+                Icons.Default.Tune,
+                MeelanoPurpleActive,
                 Modifier.weight(1f),
-                onOpenImport
+                onOpenSettings
             )
         }
     }
@@ -738,20 +816,6 @@ private fun ToolCard(
             Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Text(subtitle, fontSize = 9.sp, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-    }
-}
-
-@Composable
-private fun QuickActionsRow(
-    accent: Color,
-    onSettings: () -> Unit,
-    onServers: () -> Unit,
-    onLogs: () -> Unit
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        ToolCard("تنظیمات", "امنیت و مسیریابی", Icons.Default.Tune, MeelanoPurpleActive, Modifier.weight(1f), onSettings)
-        ToolCard("سرورها", "انتخاب نود", Icons.Default.Language, accent, Modifier.weight(1f), onServers)
-        ToolCard("لاگ", "خروجی هسته", Icons.Default.NetworkCheck, MeelanoGreenSuccess, Modifier.weight(1f), onLogs)
     }
 }
 

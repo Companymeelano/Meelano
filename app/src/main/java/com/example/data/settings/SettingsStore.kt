@@ -66,7 +66,7 @@ class SettingsStore(private val context: Context) {
     val hapticsEnabled: Flow<Boolean> = boolean(Keys.HAPTICS, true)
     val biometricEnabled: Flow<Boolean> = boolean(Keys.BIOMETRIC, true)
     val lockOnStart: Flow<Boolean> = boolean(Keys.LOCK_ON_START, false)
-    val themeAccent: Flow<String> = string(Keys.THEME_ACCENT, "cyan")
+    val themeAccent: Flow<String> = string(Keys.THEME_ACCENT, "signature")
 
     val dnsPrimary: Flow<String> = string(Keys.DNS_PRIMARY, "1.1.1.1")
     val dnsSecondary: Flow<String> = string(Keys.DNS_SECONDARY, "8.8.8.8")
