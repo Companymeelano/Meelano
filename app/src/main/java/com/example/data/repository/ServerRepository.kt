@@ -14,6 +14,7 @@ import com.example.data.model.ServerSort
 import com.example.data.model.VpnServer
 import com.example.data.settings.SettingsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.async
@@ -22,10 +23,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import okhttp3.Cache
+import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -41,10 +46,32 @@ class ServerRepository(
     private val settings: SettingsStore
 ) {
 
+    /**
+     * Client for subscription downloads.
+     *
+     * Tuned for fetching text lists over networks where many mirrors are
+     * blocked, so the priorities are: give a *reachable* mirror enough time to
+     * answer, but never let a blocked one hold the whole refresh open.
+     *
+     * The per-call ceiling matters most. Connect/read timeouts only bound
+     * individual phases, so a mirror that trickles bytes forever could evade
+     * both; callTimeout caps the entire request.
+     */
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .callTimeout(35, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        // HTTP/2 lets several mirror requests share one connection.
+        .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+        // Mirrors are re-hit every refresh, so keeping sockets warm removes a
+        // full TCP+TLS round trip from each subsequent fetch.
+        .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
+        // Subscription lists are highly compressible plain text, and honouring
+        // ETag/Last-Modified means an unchanged list costs a 304 instead of a
+        // couple of megabytes.
+        .cache(Cache(File(context.cacheDir, "subscriptions"), SUBSCRIPTION_CACHE_BYTES))
         .build()
 
     private val _vipServers = MutableStateFlow(BundledServers.vip)
@@ -70,6 +97,18 @@ class ServerRepository(
 
     /** No more than this many surviving nodes may share one host address. */
     private val MAX_NODES_PER_HOST = 3
+
+    private companion object {
+        /**
+         * Subscription lists are small; 8 MiB holds every mirror many times
+         * over. The 100 MiB figure sometimes suggested for this is sized for
+         * image caches and would just waste user storage.
+         */
+        const val SUBSCRIPTION_CACHE_BYTES = 8L * 1024 * 1024
+
+        /** First backoff step; doubles per transient failure, capped at 8x. */
+        const val RETRY_BASE_DELAY_MS = 400L
+    }
 
     data class UpdateProgress(val stage: String, val done: Int, val total: Int) {
         val fraction: Float get() = if (total <= 0) 0f else done.toFloat() / total
@@ -347,22 +386,48 @@ class ServerRepository(
      * that actually arrives.
      */
     private suspend fun fetchWithMirrors(url: String): String? = withContext(Dispatchers.IO) {
-        for (candidate in mirrorsFor(url)) {
-            val body = runCatching {
+        val mirrors = mirrorsFor(url)
+        for ((index, candidate) in mirrors.withIndex()) {
+            val outcome = runCatching {
                 httpClient.newCall(
                     Request.Builder()
                         .url(candidate)
-                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+                        .header("User-Agent", com.example.vpn.proto.Transport.USER_AGENT)
+                        // OkHttp adds this itself and transparently inflates the
+                        // reply, but being explicit keeps proxies from stripping it.
+                        .header("Accept-Encoding", "gzip")
                         .build()
                 ).execute().use { response ->
-                    if (response.isSuccessful) response.body?.string() else null
+                    when {
+                        response.isSuccessful -> Fetched(response.body?.string(), retry = false)
+                        // 5xx and 429 are transient; a blocked or missing mirror
+                        // (403/404) will not improve by asking again.
+                        response.code == 429 || response.code >= 500 ->
+                            Fetched(null, retry = true)
+                        else -> Fetched(null, retry = false)
+                    }
                 }
-            }.getOrNull()
+            }.getOrElse { error ->
+                // Network-level failures are worth one more try; a malformed URL
+                // is not.
+                Fetched(null, retry = error !is IllegalArgumentException)
+            }
 
+            val body = outcome.body
             if (!body.isNullOrBlank() && body.contains("://")) return@withContext body
+
+            // Exponential backoff, but only between genuinely transient
+            // failures and never after the final mirror — waiting to discover
+            // there is nothing left to try just delays the error.
+            if (outcome.retry && index < mirrors.lastIndex) {
+                delay(RETRY_BASE_DELAY_MS shl index.coerceAtMost(3))
+            }
         }
         null
     }
+
+    /** Result of one mirror attempt, and whether backing off could help. */
+    private data class Fetched(val body: String?, val retry: Boolean)
 
     /** Expands a subscription URL into every equivalent mirror we can try. */
     private fun mirrorsFor(url: String): List<String> {

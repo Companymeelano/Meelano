@@ -14,6 +14,8 @@ import com.example.data.repository.ServerRepository
 import com.example.data.security.SecurityManager
 import com.example.data.settings.SettingsStore
 import com.example.util.SmartImportHelper
+import com.example.core.SpeedTester
+import com.example.core.ConfigParser
 import com.example.vpn.MeelanoVpnService
 import com.example.vpn.VpnConnectionState
 import kotlinx.coroutines.delay
@@ -98,6 +100,10 @@ class MainViewModel(
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    /** Live throughput test state, null when no test is running. */
+    private val _speedTest = MutableStateFlow<SpeedTestState?>(null)
+    val speedTest: StateFlow<SpeedTestState?> = _speedTest.asStateFlow()
 
     private val _toast = MutableStateFlow<String?>(null)
     val toast: StateFlow<String?> = _toast.asStateFlow()
@@ -220,6 +226,56 @@ class MainViewModel(
             }
         }
     }
+
+    /**
+     * Measures real throughput through the active server.
+     *
+     * Runs the transfer over the node's own protocol tunnel, so the number
+     * reflects what the user would actually get rather than a guess derived
+     * from latency.
+     */
+    fun runSpeedTest() {
+        if (_speedTest.value?.running == true) return
+        val server = activeServer.value
+        val endpoint = ConfigParser.parse(server.configLink)
+        if (endpoint == null) {
+            _toast.value = "کانفیگ این سرور قابل تجزیه نیست"
+            return
+        }
+
+        viewModelScope.launch {
+            _speedTest.value = SpeedTestState(running = true, serverName = server.name)
+            val report = SpeedTester.measure(endpoint) { bytes ->
+                _speedTest.value = _speedTest.value?.copy(bytesTransferred = bytes)
+            }
+            _speedTest.value = SpeedTestState(
+                running = false,
+                serverName = server.name,
+                mbps = report.mbps,
+                bytesTransferred = report.bytesTransferred,
+                error = report.error
+            )
+            MeelanoVpnService.log(
+                if (report.success) {
+                    "Speed test · ${server.name} · %.2f Mbps".format(report.mbps)
+                } else {
+                    "Speed test failed · ${report.error}"
+                }
+            )
+        }
+    }
+
+    fun dismissSpeedTest() {
+        _speedTest.value = null
+    }
+
+    data class SpeedTestState(
+        val running: Boolean,
+        val serverName: String,
+        val mbps: Double = 0.0,
+        val bytesTransferred: Long = 0,
+        val error: String? = null
+    )
 
     /** Guards against re-entrancy while a cascade is already running. */
     private var isFailingOver = false

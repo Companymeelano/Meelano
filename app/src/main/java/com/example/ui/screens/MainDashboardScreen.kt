@@ -98,6 +98,7 @@ import com.example.ui.modals.QrCodeDialog
 import com.example.ui.modals.SecurityLockScreen
 import com.example.ui.modals.ServerListModal
 import com.example.ui.modals.SettingsModal
+import com.example.ui.modals.SpeedTestDialog
 import com.example.ui.modals.SmartImportFallbackDialog
 import com.example.ui.modals.SplitTunnelingDialog
 import com.example.ui.theme.LocalAccent
@@ -127,6 +128,7 @@ fun MainDashboardScreen(
 
     val isTestingPing by viewModel.isTestingPing.collectAsStateWithLifecycle()
     val refreshStage by viewModel.updateProgress.collectAsStateWithLifecycle()
+    val speedTestState by viewModel.speedTest.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val liveStats by viewModel.liveStats.collectAsStateWithLifecycle()
     val activeServer by viewModel.activeServer.collectAsStateWithLifecycle()
@@ -284,6 +286,7 @@ fun MainDashboardScreen(
                         onOpenLogs = { viewModel.openLogsConsole() },
                         onOpenImport = { viewModel.openImport() },
                         onOpenServers = { viewModel.openServersModal() },
+                        onSpeedTest = { viewModel.runSpeedTest() },
                         onToggleKillSwitch = { viewModel.toggleKillSwitch() }
                     )
 
@@ -310,6 +313,17 @@ fun MainDashboardScreen(
                 },
                 progress = refreshStage?.fraction
             )
+
+            // Live throughput readout, shown while a measurement runs and left
+            // on screen with the result until dismissed.
+            speedTestState?.let { speed ->
+                SpeedTestDialog(
+                    state = speed,
+                    accent = accent,
+                    secondary = secondary,
+                    onDismiss = { viewModel.dismissSpeedTest() }
+                )
+            }
 
             Modals(
                 viewModel = viewModel,
@@ -707,6 +721,7 @@ private fun SecurityToolsPanel(
     onOpenLogs: () -> Unit,
     onOpenImport: () -> Unit,
     onOpenServers: () -> Unit,
+    onSpeedTest: () -> Unit,
     onToggleKillSwitch: () -> Unit
 ) {
     // Grouped by intent so a user can predict where a control lives:
@@ -803,6 +818,20 @@ private fun SecurityToolsPanel(
                 Modifier.weight(1f),
                 onOpenSettings
             )
+        }
+
+        Spacer(Modifier.height(Spacing.Medium))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.Medium)) {
+            ToolCard(
+                "آزمایش سرعت",
+                "اندازه‌گیری واقعی پهنای باند",
+                Icons.Default.Speed,
+                accent,
+                Modifier.weight(1f),
+                onSpeedTest
+            )
+            Spacer(Modifier.weight(1f))
         }
     }
 }
