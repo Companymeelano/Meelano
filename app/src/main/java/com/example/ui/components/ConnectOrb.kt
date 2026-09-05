@@ -32,6 +32,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -52,7 +54,8 @@ import kotlin.math.sin
  *  3. a sweeping radar arc that accelerates dramatically while connecting;
  *  4. orbiting energy particles whose radius breathes with the state;
  *  5. a glass dome with a specular highlight, matching the launcher icon;
- *  6. the power glyph, which morphs colour and glow with the state.
+ *  6. the shield crest and neon M from the launcher icon, whose glow
+ *     tracks the state.
  */
 @Composable
 fun ConnectOrb(
@@ -279,8 +282,8 @@ fun ConnectOrb(
                     center = Offset(centre.x - domeRadius * 0.35f, centre.y - domeRadius * 0.5f)
                 )
 
-                // ---- 7. power glyph ----
-                drawPowerGlyph(centre, domeRadius * 0.52f, stateColor, glow)
+                // ---- 7. the shield + neon M, straight from the launcher icon ----
+                drawShieldCrest(centre, domeRadius * 0.86f, stateColor, glow, connected)
             }
         }
 
@@ -302,45 +305,121 @@ fun ConnectOrb(
     }
 }
 
-/** The classic power symbol: a broken ring with a vertical stem. */
-private fun DrawScope.drawPowerGlyph(
+/**
+ * Draws the launcher icon's crest: a chrome-rimmed shield carrying the neon "M".
+ *
+ * This is the app's signature mark, so the hero control renders it rather than a
+ * generic power symbol — the home screen and the launcher icon now show the same
+ * object. The M keeps the icon's cyan-to-violet stroke gradient, while the
+ * shield rim picks up the current connection colour so state is still legible at
+ * a glance.
+ */
+private fun DrawScope.drawShieldCrest(
     centre: Offset,
-    radius: Float,
-    color: Color,
-    glow: Float
+    height: Float,
+    stateColor: Color,
+    glow: Float,
+    connected: Boolean
 ) {
-    val stroke = radius * 0.22f
-    // Soft glow pass underneath.
-    drawArc(
-        color = color.copy(alpha = 0.30f * glow),
-        startAngle = -65f,
-        sweepAngle = 310f,
-        useCenter = false,
-        topLeft = Offset(centre.x - radius, centre.y - radius),
-        size = Size(radius * 2, radius * 2),
-        style = Stroke(width = stroke * 2.4f, cap = StrokeCap.Round)
+    val halfWidth = height * 0.40f
+    val top = centre.y - height * 0.50f
+    val bottom = centre.y + height * 0.50f
+    val shoulder = top + height * 0.30f
+
+    // Classic heater-shield silhouette: square shoulders tapering to a point.
+    val shield = Path().apply {
+        moveTo(centre.x - halfWidth, top)
+        lineTo(centre.x + halfWidth, top)
+        lineTo(centre.x + halfWidth, shoulder)
+        cubicTo(
+            centre.x + halfWidth, bottom - height * 0.22f,
+            centre.x + halfWidth * 0.55f, bottom - height * 0.05f,
+            centre.x, bottom
+        )
+        cubicTo(
+            centre.x - halfWidth * 0.55f, bottom - height * 0.05f,
+            centre.x - halfWidth, bottom - height * 0.22f,
+            centre.x - halfWidth, shoulder
+        )
+        close()
+    }
+
+    // Dark glass interior, brighter toward the top-left like the icon.
+    drawPath(
+        path = shield,
+        brush = Brush.linearGradient(
+            listOf(
+                Color(0xFF243056).copy(alpha = 0.95f),
+                Color(0xFF0B0A1F).copy(alpha = 0.98f)
+            ),
+            start = Offset(centre.x - halfWidth, top),
+            end = Offset(centre.x + halfWidth, bottom)
+        )
     )
-    drawArc(
-        color = color,
-        startAngle = -65f,
-        sweepAngle = 310f,
-        useCenter = false,
-        topLeft = Offset(centre.x - radius, centre.y - radius),
-        size = Size(radius * 2, radius * 2),
-        style = Stroke(width = stroke, cap = StrokeCap.Round)
+
+    // Chrome rim. Tinted by state so the crest still reads as a status light.
+    drawPath(
+        path = shield,
+        brush = Brush.linearGradient(
+            listOf(
+                Color(0xFFE8EEFB).copy(alpha = 0.92f),
+                stateColor.copy(alpha = 0.55f),
+                Color(0xFF3D4A72).copy(alpha = 0.85f),
+                Color(0xFFC9D2E6).copy(alpha = 0.60f)
+            ),
+            start = Offset(centre.x - halfWidth, top),
+            end = Offset(centre.x + halfWidth, bottom)
+        ),
+        style = Stroke(width = height * 0.055f)
     )
-    drawLine(
-        color = color.copy(alpha = 0.30f * glow),
-        start = Offset(centre.x, centre.y - radius * 1.28f),
-        end = Offset(centre.x, centre.y - radius * 0.12f),
-        strokeWidth = stroke * 2.4f,
-        cap = StrokeCap.Round
+
+    drawNeonM(centre, height * 0.34f, glow, connected)
+}
+
+/** The icon's neon "M", stroked with its cyan-to-violet gradient. */
+private fun DrawScope.drawNeonM(centre: Offset, size: Float, glow: Float, connected: Boolean) {
+    val halfWidth = size * 0.62f
+    val halfHeight = size * 0.52f
+    val topY = centre.y - halfHeight
+    val bottomY = centre.y + halfHeight
+
+    val m = Path().apply {
+        moveTo(centre.x - halfWidth, bottomY)
+        lineTo(centre.x - halfWidth * 0.62f, topY)
+        lineTo(centre.x, centre.y + halfHeight * 0.22f)
+        lineTo(centre.x + halfWidth * 0.62f, topY)
+        lineTo(centre.x + halfWidth, bottomY)
+    }
+
+    val strokeBrush = Brush.linearGradient(
+        listOf(Color(0xFF4EBCF1), Color(0xFF7FA3F8), Color(0xFF9A58F6)),
+        start = Offset(centre.x - halfWidth, centre.y),
+        end = Offset(centre.x + halfWidth, centre.y)
     )
-    drawLine(
-        color = color,
-        start = Offset(centre.x, centre.y - radius * 1.28f),
-        end = Offset(centre.x, centre.y - radius * 0.12f),
-        strokeWidth = stroke,
-        cap = StrokeCap.Round
+
+    // Two soft passes underneath give the tube its neon bloom.
+    val intensity = if (connected) glow else glow * 0.55f
+    drawPath(
+        path = m,
+        brush = strokeBrush,
+        alpha = 0.18f * intensity,
+        style = Stroke(width = size * 0.46f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+    drawPath(
+        path = m,
+        brush = strokeBrush,
+        alpha = 0.34f * intensity,
+        style = Stroke(width = size * 0.26f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+    drawPath(
+        path = m,
+        brush = strokeBrush,
+        style = Stroke(width = size * 0.13f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+    // A white core is what makes a neon tube read as lit rather than merely coloured.
+    drawPath(
+        path = m,
+        color = Color.White.copy(alpha = 0.55f * intensity),
+        style = Stroke(width = size * 0.05f, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 }

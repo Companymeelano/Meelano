@@ -27,6 +27,11 @@ object Transport {
         "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
 
+    /** IPv4 dotted-quad or bracketless IPv6. */
+    private val LITERAL_IP = Regex(
+        """^((\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]*:[0-9a-fA-F:]*)$"""
+    )
+
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 60_000
 
@@ -94,9 +99,32 @@ object Transport {
         return Carrier(socket, input, output)
     }
 
+    /**
+     * True when the node dials a bare IP but presents someone else's SNI — the
+     * classic domain-fronting shape.
+     *
+     * The certificate such a server returns is whatever the fronted CDN hands
+     * out, so it can never chain-validate against the address we dialled. That
+     * is expected, not an attack: VLESS/VMess/Trojan all carry their own
+     * authentication and encryption inside the TLS tunnel, so the certificate is
+     * only there to make the connection look ordinary on the wire. Insisting on
+     * chain validation here is what produced "Trust anchor for certification
+     * path not found" and killed every fronted node.
+     */
+    private fun isDomainFronted(endpoint: ProxyEndpoint): Boolean {
+        val host = endpoint.host
+        val sni = endpoint.effectiveSni
+        if (sni.isBlank() || sni.equals(host, ignoreCase = true)) return false
+        return LITERAL_IP.matches(host)
+    }
+
     private fun upgradeToTls(raw: Socket, endpoint: ProxyEndpoint): SSLSocket {
         val sni = endpoint.effectiveSni
-        val factory: SSLSocketFactory = if (endpoint.allowInsecure || endpoint.security == "reality") {
+        val skipChainValidation = endpoint.allowInsecure ||
+            endpoint.security == "reality" ||
+            isDomainFronted(endpoint)
+
+        val factory: SSLSocketFactory = if (skipChainValidation) {
             // Reality presents a borrowed certificate chain on purpose, so chain
             // validation against a public CA is meaningless for it.
             val context = SSLContext.getInstance("TLS")

@@ -14,6 +14,9 @@ import com.example.data.model.ServerSort
 import com.example.data.model.VpnServer
 import com.example.data.settings.SettingsStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -184,24 +187,41 @@ class ServerRepository(
             _updateProgress.value = UpdateProgress("دریافت اشتراک‌ها…", 0, sources.size)
 
             val endpoints = LinkedHashMap<String, ProxyEndpoint>()
-            sources.forEachIndexed { index, url ->
-                runCatching {
-                    httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                        val body = response.body?.string()
-                        if (response.isSuccessful && !body.isNullOrBlank()) {
-                            ConfigParser.parseSubscription(body).forEach { endpoint ->
-                                endpoints.putIfAbsent("${endpoint.host}:${endpoint.port}", endpoint)
+            var reachedAnySource = false
+
+            // Fetch sources in parallel — serially this took minutes when several
+            // mirrors were blocked and each had to time out in turn.
+            coroutineScope {
+                sources.mapIndexed { index, url ->
+                    async(Dispatchers.IO) {
+                        val body = fetchWithMirrors(url)
+                        synchronized(endpoints) {
+                            if (body != null) {
+                                reachedAnySource = true
+                                ConfigParser.parseSubscription(body).forEach { endpoint ->
+                                    endpoints.putIfAbsent(
+                                        "${endpoint.host}:${endpoint.port}",
+                                        endpoint
+                                    )
+                                }
                             }
+                            _updateProgress.value =
+                                UpdateProgress("دریافت اشتراک‌ها…", index + 1, sources.size)
                         }
                     }
-                }
-                _updateProgress.value = UpdateProgress("دریافت اشتراک‌ها…", index + 1, sources.size)
+                }.awaitAll()
             }
 
             if (endpoints.isEmpty()) {
                 _updateProgress.value = null
                 return@withContext Result.failure(
-                    IllegalStateException("هیچ نودی دریافت نشد؛ دسترسی به GitHub برقرار نیست")
+                    IllegalStateException(
+                        if (reachedAnySource) {
+                            "اشتراک‌ها خالی بودند؛ بعداً دوباره تلاش کنید"
+                        } else {
+                            "دسترسی به منابع برقرار نشد؛ اینترنت یا فیلترشکن را بررسی کنید"
+                        }
+                    )
                 )
             }
 
@@ -229,8 +249,8 @@ class ServerRepository(
                     .sortedBy { it.second }
                     // Only the most responsive candidates earn a full handshake.
                     .take(keep * 5)
-                    .map { it.first }
             }
+            val reachableEndpoints = reachable.map { it.first }
 
             if (reachable.isEmpty()) {
                 _updateProgress.value = null
@@ -242,9 +262,9 @@ class ServerRepository(
             // Stage 3 — the strict test: a real protocol handshake plus a live
             // HTTP request proxied through the node. Only nodes that genuinely
             // relayed traffic survive this, which is what makes the list usable.
-            _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی ${reachable.size} نود…", 0, reachable.size)
+            _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی ${reachableEndpoints.size} نود…", 0, reachable.size)
             val validated = NodeValidator.validateAll(
-                endpoints = reachable,
+                endpoints = reachableEndpoints,
                 parallelism = 12,
                 probeTimeoutMs = 6_000,
                 onProgress = { done, total ->
@@ -252,26 +272,29 @@ class ServerRepository(
                 }
             )
 
-            if (validated.isEmpty()) {
-                _updateProgress.value = null
-                return@withContext Result.failure(
-                    IllegalStateException("هیچ نودی تست واقعی را پاس نکرد؛ بعداً دوباره تلاش کنید")
-                )
+            // Strict validation is the goal, but it must never leave the user with
+            // an empty list. If the deep probe cleared nothing — which happens when
+            // the phone is behind a captive portal or heavy DPI — fall back to the
+            // nodes that at least answered TCP, clearly marked as unverified.
+            val verifiedFirst: List<Pair<ProxyEndpoint, Int>> = if (validated.isNotEmpty()) {
+                validated.map { it.endpoint to it.latencyMs }
+            } else {
+                reachable
             }
+            val strictlyVerified = validated.isNotEmpty()
 
             // Stage 4 — diversity: cap how many nodes come from one host so the
             // list is not twelve entries pointing at the same overloaded server.
             val perHost = HashMap<String, Int>()
-            val alive = validated
-                .filter { result ->
-                    val count = perHost.getOrDefault(result.endpoint.host, 0)
+            val alive = verifiedFirst
+                .filter { (endpoint, _) ->
+                    val count = perHost.getOrDefault(endpoint.host, 0)
                     if (count >= MAX_NODES_PER_HOST) false else {
-                        perHost[result.endpoint.host] = count + 1
+                        perHost[endpoint.host] = count + 1
                         true
                     }
                 }
                 .take(keep)
-                .map { it.endpoint to it.latencyMs }
 
             val favorites = settings.favorites.first()
             val now = System.currentTimeMillis()
@@ -285,7 +308,11 @@ class ServerRepository(
                 val id = "free_${endpoint.host}_${endpoint.port}"
                 VpnServer(
                     id = id,
-                    name = "MeeLano ${geo.country} $ordinal",
+                    name = if (strictlyVerified) {
+                        "MeeLano ${geo.country} $ordinal"
+                    } else {
+                        "MeeLano ${geo.country} $ordinal ○"
+                    },
                     countryName = geo.country,
                     flagEmoji = geo.flag,
                     protocol = endpoint.displayProtocol,
@@ -306,6 +333,54 @@ class ServerRepository(
             _updateProgress.value = null
             Result.failure(e)
         }
+    }
+
+    /**
+     * Fetches a subscription, retrying through alternative CDN mirrors.
+     *
+     * raw.githubusercontent.com and jsDelivr are blocked on many Iranian
+     * networks — and blocked differently from one ISP to the next — so a single
+     * URL failing says nothing about the others. Rewrites the same underlying
+     * repository path across every mirror we know and returns the first body
+     * that actually arrives.
+     */
+    private suspend fun fetchWithMirrors(url: String): String? = withContext(Dispatchers.IO) {
+        for (candidate in mirrorsFor(url)) {
+            val body = runCatching {
+                httpClient.newCall(
+                    Request.Builder()
+                        .url(candidate)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14)")
+                        .build()
+                ).execute().use { response ->
+                    if (response.isSuccessful) response.body?.string() else null
+                }
+            }.getOrNull()
+
+            if (!body.isNullOrBlank() && body.contains("://")) return@withContext body
+        }
+        null
+    }
+
+    /** Expands a subscription URL into every equivalent mirror we can try. */
+    private fun mirrorsFor(url: String): List<String> {
+        // Recognise the two shapes our defaults use and recover owner/ref/path.
+        val jsdelivr = Regex("""https://cdn\.jsdelivr\.net/gh/([^@/]+)/([^@/]+)@([^/]+)/(.+)""")
+            .find(url)
+        val raw = Regex("""https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)""")
+            .find(url)
+        val parts = jsdelivr?.destructured ?: raw?.destructured ?: return listOf(url)
+        val (owner, repo, ref, path) = parts
+
+        return listOf(
+            url,
+            "https://cdn.jsdelivr.net/gh/$owner/$repo@$ref/$path",
+            "https://fastly.jsdelivr.net/gh/$owner/$repo@$ref/$path",
+            "https://gcore.jsdelivr.net/gh/$owner/$repo@$ref/$path",
+            "https://raw.githubusercontent.com/$owner/$repo/$ref/$path",
+            "https://ghproxy.net/https://raw.githubusercontent.com/$owner/$repo/$ref/$path",
+            "https://raw.gitmirror.com/$owner/$repo/$ref/$path"
+        ).distinct()
     }
 
     suspend fun addSubscription(url: String): Boolean {

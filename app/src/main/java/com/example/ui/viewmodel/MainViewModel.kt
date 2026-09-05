@@ -177,7 +177,19 @@ class MainViewModel(
     private fun watchForDrops() {
         viewModelScope.launch {
             connectionState.collect { state ->
-                if (state == VpnConnectionState.CONNECTED) triedServerIds.clear()
+                // Only forget the blacklist once a tunnel has held long enough to
+                // be real. Clearing it the instant CONNECTED appears let the
+                // cascade re-dial the very same dead node seconds later, which is
+                // how failover ended up looping over one server forever.
+                if (state == VpnConnectionState.CONNECTED) {
+                    connectedSince = System.currentTimeMillis()
+                    viewModelScope.launch {
+                        delay(STABLE_CONNECTION_MS)
+                        if (connectionState.value == VpnConnectionState.CONNECTED) {
+                            triedServerIds.clear()
+                        }
+                    }
+                }
                 if (state == VpnConnectionState.FAILED && smartFailoverEnabled.value && !isFailingOver) {
                     failover()
                 }
@@ -188,6 +200,7 @@ class MainViewModel(
     /** Guards against re-entrancy while a cascade is already running. */
     private var isFailingOver = false
     private val triedServerIds = mutableSetOf<String>()
+    private var connectedSince = 0L
 
     private suspend fun failover() {
         val context = appContext ?: return
@@ -206,9 +219,12 @@ class MainViewModel(
             }
 
             if (candidates.isEmpty()) {
+                // Every node has been tried and none held. Stop rather than
+                // restarting the cascade — an endless retry loop drains the
+                // battery and tells the user nothing.
                 triedServerIds.clear()
                 _toast.value = "هیچ سرور سالمی پیدا نشد؛ لطفاً لیست را به‌روزرسانی کنید"
-                MeelanoVpnService.log("Smart Failover: exhausted every known node")
+                MeelanoVpnService.log("Smart Failover: exhausted every known node — stopping")
                 return
             }
 
@@ -455,5 +471,10 @@ class MainViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             MainViewModel(repository, settings, securityManager) as T
+    }
+
+    private companion object {
+        /** How long a tunnel must hold before we trust it and reset failover. */
+        const val STABLE_CONNECTION_MS = 15_000L
     }
 }

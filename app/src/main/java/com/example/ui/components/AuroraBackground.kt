@@ -61,9 +61,18 @@ fun AuroraBackground(
 
     Box(modifier = modifier.fillMaxSize()) {
         Canvas(modifier = Modifier.fillMaxSize()) {
+            // The icon's defining gesture is a diagonal sweep from navy in the
+            // top-left to violet-black in the bottom-right, so the app field is
+            // drawn on the same axis rather than as a vertical gradient.
             drawRect(
-                brush = Brush.verticalGradient(
-                    listOf(MeelanoBgDark, MeelanoBgMid, MeelanoBgDarkSecondary)
+                brush = Brush.linearGradient(
+                    colorStops = arrayOf(
+                        0.00f to MeelanoBgDark,
+                        0.45f to MeelanoBgMid,
+                        1.00f to MeelanoBgDarkSecondary
+                    ),
+                    start = Offset.Zero,
+                    end = Offset(size.width, size.height)
                 )
             )
             drawStars(stars, shimmer)
