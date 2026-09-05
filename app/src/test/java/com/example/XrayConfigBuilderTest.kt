@@ -8,12 +8,20 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * The generated Xray config is the entire contract with the core: a wrong field
  * name does not throw, it just silently fails to connect. These tests pin the
  * shape of what we emit.
+ *
+ * Runs under Robolectric because ConfigParser is built on android.net.Uri,
+ * which returns null on a plain JVM.
  */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class XrayConfigBuilderTest {
 
     private fun configFor(link: String): JSONObject {
