@@ -218,16 +218,21 @@ object RouteTable {
         val out = mutableListOf<Cidr>()
         var start = startInclusive
         while (start <= endInclusive) {
-            var maxSize = 32
-            while (maxSize > 0) {
-                val mask = 1L shl (32 - (maxSize - 1))
-                if (start % mask != 0L) break
-                maxSize--
+            // Largest block that starts at `start` (alignment constraint)…
+            var prefixByAlignment = 32
+            while (prefixByAlignment > 0) {
+                val blockSize = 1L shl (32 - (prefixByAlignment - 1))
+                if (start % blockSize != 0L) break
+                prefixByAlignment--
             }
-            var maxDiff = 32 - Math.floor(Math.log((endInclusive - start + 1).toDouble()) / Math.log(2.0)).toInt()
-            if (maxSize < maxDiff) maxDiff = maxSize
-            out += Cidr(longToIp(start), maxDiff)
-            start += 1L shl (32 - maxDiff)
+            // …and that also fits inside the remaining span (size constraint).
+            val remaining = endInclusive - start + 1
+            val prefixBySize =
+                32 - Math.floor(Math.log(remaining.toDouble()) / Math.log(2.0)).toInt()
+
+            val prefix = maxOf(prefixByAlignment, prefixBySize).coerceIn(0, 32)
+            out += Cidr(longToIp(start), prefix)
+            start += 1L shl (32 - prefix)
         }
         return out
     }

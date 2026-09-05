@@ -43,8 +43,8 @@ jobs:
       - name: Report build output
         if: always()
         run: |
-          grep -E "^e: |error:|FAILED|Unresolved|AssertionError" /tmp/build.log \
-            | head -40 \
+          grep -E "^e: |error:|FAILED|Unresolved|AssertionError|Caused by|at com.example|expected:" /tmp/build.log \
+            | head -60 \
             | while IFS= read -r line; do
                 clean=$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g')
                 echo "::error::$clean"
