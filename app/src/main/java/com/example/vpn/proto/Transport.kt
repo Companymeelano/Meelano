@@ -69,7 +69,7 @@ object Transport {
     }
 
     private fun upgradeToTls(raw: Socket, endpoint: ProxyEndpoint): SSLSocket {
-        val sni = endpoint.sni.ifBlank { endpoint.host }
+        val sni = endpoint.effectiveSni
         val factory: SSLSocketFactory = if (endpoint.allowInsecure || endpoint.security == "reality") {
             // Reality presents a borrowed certificate chain on purpose, so chain
             // validation against a public CA is meaningless for it.
@@ -90,8 +90,16 @@ object Transport {
         runCatching {
             val params = tls.sslParameters
             params.serverNames = listOf(javax.net.ssl.SNIHostName(sni))
-            if (endpoint.network == "ws" || endpoint.network == "tcp") {
-                params.applicationProtocols = arrayOf("http/1.1")
+            // Honour the config's ALPN exactly: CDN front-ends often reject a
+            // handshake that offers h2 when the node expects http/1.1.
+            val alpn = endpoint.alpn
+                .split(',')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            params.applicationProtocols = when {
+                alpn.isNotEmpty() -> alpn.toTypedArray()
+                endpoint.network == "ws" -> arrayOf("http/1.1")
+                else -> arrayOf("h2", "http/1.1")
             }
             tls.sslParameters = params
         }
@@ -108,7 +116,9 @@ object Transport {
     ) {
         val key = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val encodedKey = Base64.getEncoder().encodeToString(key)
-        val host = endpoint.sni.ifBlank { endpoint.host }
+        // The Host header must be the CDN-fronted name, which is often NOT the
+        // address we dialled (that may be a bare IP).
+        val host = endpoint.effectiveHost
         val path = endpoint.path.ifBlank { "/" }
 
         val request = buildString {

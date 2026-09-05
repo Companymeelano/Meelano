@@ -25,7 +25,24 @@ data class VpnServer(
     val endpoint get() = ConfigParser.parse(configLink)
     val isReachable: Boolean get() = pingMs > 0
     val isUntested: Boolean get() = pingMs == 0 || lastTestedAt == 0L
-    val hostLabel: String get() = endpoint?.summary() ?: "نامشخص"
+    /**
+     * What the UI is allowed to show about this node's address.
+     *
+     * VIP nodes are white-labelled: the upstream provider's hostname is never
+     * surfaced, only the destination country and transport. Free and imported
+     * nodes show their real endpoint, because the user supplied them.
+     */
+    val hostLabel: String
+        get() {
+            val ep = endpoint ?: return "نامشخص"
+            if (!isVip) return ep.summary()
+            val transport = if (ep.network.isNotBlank() && ep.network != "tcp") {
+                " (${ep.network})"
+            } else {
+                ""
+            }
+            return "$flagEmoji $countryName · ${ep.displayProtocol}$transport"
+        }
 
     val quality: ConnectionQuality
         get() = when {

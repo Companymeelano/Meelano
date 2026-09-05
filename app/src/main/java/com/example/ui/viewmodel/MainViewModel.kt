@@ -151,6 +151,7 @@ class MainViewModel(
                 putExtra(MeelanoVpnService.EXTRA_CONFIG_LINK, server.configLink)
                 putStringArrayListExtra(MeelanoVpnService.EXTRA_BYPASS_PACKAGES, bypass)
                 putExtra(MeelanoVpnService.EXTRA_KILL_SWITCH, killSwitchEnabled.value)
+                putExtra(MeelanoVpnService.EXTRA_WHITE_LABEL, server.isVip)
                 putExtra(MeelanoVpnService.EXTRA_ROUTING_MODE, routingMode.value.name)
                 putExtra(MeelanoVpnService.EXTRA_DNS_PRIMARY, dnsPrimary.value)
                 putExtra(MeelanoVpnService.EXTRA_DNS_SECONDARY, dnsSecondary.value)

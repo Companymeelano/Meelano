@@ -130,10 +130,16 @@ fun QrCodeDialog(server: VpnServer, onClose: () -> Unit) {
                         .background(Color.White.copy(alpha = 0.04f))
                         .padding(9.dp)
                 ) {
+                    // VIP node addresses stay private: the QR still carries the
+                    // working link, but the text form is not put on screen.
                     Text(
-                        server.configLink,
-                        fontSize = 8.sp,
-                        fontFamily = FontFamily.Monospace,
+                        if (server.isVip) {
+                            "کانفیگ اختصاصی MeeLano · برای انتقال، QR بالا را اسکن کنید"
+                        } else {
+                            server.configLink
+                        },
+                        fontSize = if (server.isVip) 10.sp else 8.sp,
+                        fontFamily = if (server.isVip) FontFamily.Default else FontFamily.Monospace,
                         color = TextMuted,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis

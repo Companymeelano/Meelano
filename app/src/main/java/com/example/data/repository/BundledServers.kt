@@ -3,104 +3,336 @@ package com.example.data.repository
 import com.example.data.model.VpnServer
 
 /**
- * The VIP nodes shipped with the app. These are real, parseable share links —
- * their host/port are used for genuine ping and handshake attempts, so a node
- * that is offline will honestly show as unreachable.
+ * The VIP nodes shipped with the app.
+ *
+ * Every entry is a real, parseable VLESS-over-WebSocket/TLS share link, so ping,
+ * handshake and throughput figures are measured against the live node — one that
+ * is offline honestly reports as unreachable rather than faking a connection.
+ *
+ * Each location appears twice:
+ *  * the plain entry routes through a CDN front, which is the most resilient to
+ *    filtering;
+ *  * the **پلاس** entry dials the origin directly with a fronted SNI/Host pair,
+ *    which is usually faster whenever it is reachable.
+ *
+ * Naming is deliberately generic: users see only the destination country and the
+ * MeeLano brand, never the upstream provider's hostnames or identifiers.
  */
 object BundledServers {
 
     val vip: List<VpnServer> = listOf(
         VpnServer(
-            id = "vip_de_frankfurt",
-            name = "MeeLano VIP · Frankfurt",
-            countryName = "آلمان (فرانکفورت)",
-            flagEmoji = "🇩🇪",
-            protocol = "VMess",
+            id = "vip_uk_1_a",
+            name = "MeeLano بریتانیا 1",
+            countryName = "بریتانیا",
+            flagEmoji = "🇬🇧",
+            protocol = "VLESS",
             isVip = true,
             pingMs = 0,
             speedMbps = 0f,
-            configLink = "vmess://eyJhZGQiOiJkZS5tZWVsYW5vLnBybyIsInBvcnQiOjQ0MywiaWQiOiI3N2ExZjIwMC02YjAwLTQ1MDctYTRjMy02ZTI1OGE4YzU5NzQiLCJhaWQiOjAsInNjeSI6ImF1dG8iLCJuZXQiOiJ3cyIsInRscyI6InRscyIsInBhdGgiOiIvbWVlbGFubyIsInBzIjoiTWVlTGFubyBWSVAgRnJhbmtmdXJ0In0=",
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FtUtK%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A8%D8%B1%DB%8C%D8%AA%D8%A7%D9%86%DB%8C%D8%A7%201",
             isSelected = true,
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
+            dataRemainingGb = 0f,
+            daysRemaining = 0
         ),
         VpnServer(
-            id = "vip_de_reality",
-            name = "MeeLano VIP · Frankfurt Reality",
-            countryName = "آلمان (فرانکفورت)",
-            flagEmoji = "🇩🇪",
-            protocol = "Reality",
+            id = "vip_uk_1_b",
+            name = "MeeLano بریتانیا 1 پلاس",
+            countryName = "بریتانیا",
+            flagEmoji = "🇬🇧",
+            protocol = "VLESS",
             isVip = true,
             pingMs = 0,
             speedMbps = 0f,
-            configLink = "vless://96b1e600-4b31-482a-a92c-567a123bcdef@de2.meelano.pro:443?encryption=none&security=reality&sni=www.yahoo.com&fp=chrome&pbk=Z93abcdef1234567890&sid=6ba7b810&type=grpc&serviceName=meelano-grpc#MeeLano%20VIP%20Reality",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@178.239.157.239:443?security=tls&sni=cdn.asset.aparat.com&host=cdn.asset.aparat.com&pcs=8e823bc5dc2bfd715bda25eb3e345229a20c538339ccc07ccb28dd692b9a7185&type=ws&path=%2Fvl%2Ft%2FtUtK%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A8%D8%B1%DB%8C%D8%AA%D8%A7%D9%86%DB%8C%D8%A7%201%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
         ),
         VpnServer(
-            id = "vip_fi_helsinki",
-            name = "MeeLano VIP · Helsinki",
-            countryName = "فنلاند (هلسینکی)",
-            flagEmoji = "🇫🇮",
-            protocol = "Hysteria 2",
+            id = "vip_uk_2_a",
+            name = "MeeLano بریتانیا 2",
+            countryName = "بریتانیا",
+            flagEmoji = "🇬🇧",
+            protocol = "VLESS",
             isVip = true,
             pingMs = 0,
             speedMbps = 0f,
-            configLink = "hy2://meelano_vip:secretPass123@fi.meelano.pro:443?sni=www.speedtest.net&insecure=0#MeeLano%20VIP%20Helsinki",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FuUuK%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A8%D8%B1%DB%8C%D8%AA%D8%A7%D9%86%DB%8C%D8%A7%202",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
         ),
         VpnServer(
-            id = "vip_nl_amsterdam",
-            name = "MeeLano VIP · Amsterdam",
-            countryName = "هلند (آمستردام)",
+            id = "vip_uk_2_b",
+            name = "MeeLano بریتانیا 2 پلاس",
+            countryName = "بریتانیا",
+            flagEmoji = "🇬🇧",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@178.239.157.239:443?security=tls&sni=asset.aparat.com&host=asset.aparat.com&pcs=0c0b948c66aff8553c1b4d9c21fc8cf43d0588a72135f85fc1a75e9c08376d3f&type=ws&path=%2Fvl%2Ft%2FuUuK%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A8%D8%B1%DB%8C%D8%AA%D8%A7%D9%86%DB%8C%D8%A7%202%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_uk_3_a",
+            name = "MeeLano بریتانیا 3",
+            countryName = "بریتانیا",
+            flagEmoji = "🇬🇧",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FwUwK%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A8%D8%B1%DB%8C%D8%AA%D8%A7%D9%86%DB%8C%D8%A7%203",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_uk_3_b",
+            name = "MeeLano بریتانیا 3 پلاس",
+            countryName = "بریتانیا",
+            flagEmoji = "🇬🇧",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@178.239.157.239:443?security=tls&sni=gateway.telewebion.ir&host=gateway.telewebion.ir&pcs=6c00814782e75231e31056aec28bf35ec1e757f2899114457db59f23709a302c&type=ws&path=%2Fvl%2Ft%2FwUwK%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A8%D8%B1%DB%8C%D8%AA%D8%A7%D9%86%DB%8C%D8%A7%203%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_us_1_a",
+            name = "MeeLano ایالات متحده 1",
+            countryName = "ایالات متحده",
+            flagEmoji = "🇺🇸",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FtUtStA%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A7%DB%8C%D8%A7%D9%84%D8%A7%D8%AA%20%D9%85%D8%AA%D8%AD%D8%AF%D9%87%201",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_us_1_b",
+            name = "MeeLano ایالات متحده 1 پلاس",
+            countryName = "ایالات متحده",
+            flagEmoji = "🇺🇸",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@178.239.157.239:443?security=tls&sni=static.telewebion.ir&host=static.telewebion.ir&pcs=7d65a6dcf82b36ee24aa7b724cf229806dde3e7c1e55b8b0d143141feb61895e&type=ws&path=%2Fvl%2Ft%2FtUtStA%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A7%DB%8C%D8%A7%D9%84%D8%A7%D8%AA%20%D9%85%D8%AA%D8%AD%D8%AF%D9%87%201%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_us_2_a",
+            name = "MeeLano ایالات متحده 2",
+            countryName = "ایالات متحده",
+            flagEmoji = "🇺🇸",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FuUuSuA%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A7%DB%8C%D8%A7%D9%84%D8%A7%D8%AA%20%D9%85%D8%AA%D8%AD%D8%AF%D9%87%202",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_us_2_b",
+            name = "MeeLano ایالات متحده 2 پلاس",
+            countryName = "ایالات متحده",
+            flagEmoji = "🇺🇸",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@37.32.44.59:443?security=tls&sni=cdn.asset.aparat.com&host=cdn.asset.aparat.com&pcs=8e823bc5dc2bfd715bda25eb3e345229a20c538339ccc07ccb28dd692b9a7185&type=ws&path=%2Fvl%2Ft%2FuUuSuA%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A7%DB%8C%D8%A7%D9%84%D8%A7%D8%AA%20%D9%85%D8%AA%D8%AD%D8%AF%D9%87%202%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_us_3_a",
+            name = "MeeLano ایالات متحده 3",
+            countryName = "ایالات متحده",
+            flagEmoji = "🇺🇸",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FwUwSwA%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A7%DB%8C%D8%A7%D9%84%D8%A7%D8%AA%20%D9%85%D8%AA%D8%AD%D8%AF%D9%87%203",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_us_3_b",
+            name = "MeeLano ایالات متحده 3 پلاس",
+            countryName = "ایالات متحده",
+            flagEmoji = "🇺🇸",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@178.239.157.239:443?security=tls&sni=asset.aparat.com&host=asset.aparat.com&pcs=0c0b948c66aff8553c1b4d9c21fc8cf43d0588a72135f85fc1a75e9c08376d3f&type=ws&path=%2Fvl%2Ft%2FwUwSwA%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A7%DB%8C%D8%A7%D9%84%D8%A7%D8%AA%20%D9%85%D8%AA%D8%AD%D8%AF%D9%87%203%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_nl_1_a",
+            name = "MeeLano هلند 1",
+            countryName = "هلند",
             flagEmoji = "🇳🇱",
             protocol = "VLESS",
             isVip = true,
             pingMs = 0,
             speedMbps = 0f,
-            configLink = "vless://4422e111-9988-4507-b6d2-334455667788@nl.meelano.pro:443?security=reality&sni=www.speedtest.net&fp=chrome&type=tcp#MeeLano%20VIP%20Amsterdam",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FtNtL%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D9%87%D9%84%D9%86%D8%AF%201",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
         ),
         VpnServer(
-            id = "vip_tr_istanbul",
-            name = "MeeLano VIP · Istanbul",
-            countryName = "ترکیه (استانبول)",
-            flagEmoji = "🇹🇷",
-            protocol = "Hysteria 2",
+            id = "vip_nl_1_b",
+            name = "MeeLano هلند 1 پلاس",
+            countryName = "هلند",
+            flagEmoji = "🇳🇱",
+            protocol = "VLESS",
             isVip = true,
             pingMs = 0,
             speedMbps = 0f,
-            configLink = "hy2://meelano_tr:secPassTr@tr.meelano.pro:443?sni=cloud.google.com#MeeLano%20VIP%20Istanbul",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@37.32.44.59:443?security=tls&sni=gateway.telewebion.ir&host=gateway.telewebion.ir&pcs=6c00814782e75231e31056aec28bf35ec1e757f2899114457db59f23709a302c&type=ws&path=%2Fvl%2Ft%2FtNtL%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D9%87%D9%84%D9%86%D8%AF%201%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
         ),
         VpnServer(
-            id = "vip_uk_london",
-            name = "MeeLano VIP · London",
-            countryName = "انگلستان (لندن)",
-            flagEmoji = "🇬🇧",
-            protocol = "Reality",
+            id = "vip_nl_2_a",
+            name = "MeeLano هلند 2",
+            countryName = "هلند",
+            flagEmoji = "🇳🇱",
+            protocol = "VLESS",
             isVip = true,
             pingMs = 0,
             speedMbps = 0f,
-            configLink = "vless://11223344-5566-7788-99aa-bbccddeeff00@uk.meelano.pro:443?security=reality&sni=www.microsoft.com&type=tcp#MeeLano%20VIP%20London",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FuNuL%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D9%87%D9%84%D9%86%D8%AF%202",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
         ),
         VpnServer(
-            id = "vip_se_stockholm",
-            name = "MeeLano VIP · Stockholm",
-            countryName = "سوئد (استکهلم)",
-            flagEmoji = "🇸🇪",
-            protocol = "Trojan",
+            id = "vip_nl_2_b",
+            name = "MeeLano هلند 2 پلاس",
+            countryName = "هلند",
+            flagEmoji = "🇳🇱",
+            protocol = "VLESS",
             isVip = true,
             pingMs = 0,
             speedMbps = 0f,
-            configLink = "trojan://meelanoTrojanPass@se.meelano.pro:443?security=tls&sni=www.apple.com&type=tcp#MeeLano%20VIP%20Stockholm",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@37.32.44.59:443?security=tls&sni=static.telewebion.ir&host=static.telewebion.ir&pcs=7d65a6dcf82b36ee24aa7b724cf229806dde3e7c1e55b8b0d143141feb61895e&type=ws&path=%2Fvl%2Ft%2FuNuL%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D9%87%D9%84%D9%86%D8%AF%202%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_nl_3_a",
+            name = "MeeLano هلند 3",
+            countryName = "هلند",
+            flagEmoji = "🇳🇱",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FwNwL%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D9%87%D9%84%D9%86%D8%AF%203",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_nl_3_b",
+            name = "MeeLano هلند 3 پلاس",
+            countryName = "هلند",
+            flagEmoji = "🇳🇱",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@178.239.157.239:443?security=tls&sni=cdn.asset.aparat.com&host=cdn.asset.aparat.com&pcs=8e823bc5dc2bfd715bda25eb3e345229a20c538339ccc07ccb28dd692b9a7185&type=ws&path=%2Fvl%2Ft%2FwNwL%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D9%87%D9%84%D9%86%D8%AF%203%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_de_1_a",
+            name = "MeeLano آلمان 1",
+            countryName = "آلمان",
+            flagEmoji = "🇩🇪",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FtDtE%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A2%D9%84%D9%85%D8%A7%D9%86%201",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_de_1_b",
+            name = "MeeLano آلمان 1 پلاس",
+            countryName = "آلمان",
+            flagEmoji = "🇩🇪",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@37.32.44.59:443?security=tls&sni=asset.aparat.com&host=asset.aparat.com&pcs=0c0b948c66aff8553c1b4d9c21fc8cf43d0588a72135f85fc1a75e9c08376d3f&type=ws&path=%2Fvl%2Ft%2FtDtE%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A2%D9%84%D9%85%D8%A7%D9%86%201%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_de_2_a",
+            name = "MeeLano آلمان 2",
+            countryName = "آلمان",
+            flagEmoji = "🇩🇪",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FuDuE%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A2%D9%84%D9%85%D8%A7%D9%86%202",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_de_2_b",
+            name = "MeeLano آلمان 2 پلاس",
+            countryName = "آلمان",
+            flagEmoji = "🇩🇪",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@37.32.44.59:443?security=tls&sni=gateway.telewebion.ir&host=gateway.telewebion.ir&pcs=6c00814782e75231e31056aec28bf35ec1e757f2899114457db59f23709a302c&type=ws&path=%2Fvl%2Ft%2FuDuE%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A2%D9%84%D9%85%D8%A7%D9%86%202%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_de_3_a",
+            name = "MeeLano آلمان 3",
+            countryName = "آلمان",
+            flagEmoji = "🇩🇪",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@0sowk.hbsek.org:443?type=ws&security=tls&sni=0sowk.hbsek.org&host=0sowk.hbsek.org&path=%2Fvl%2Ft%2FwDwE%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A2%D9%84%D9%85%D8%A7%D9%86%203",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
+        ),
+        VpnServer(
+            id = "vip_de_3_b",
+            name = "MeeLano آلمان 3 پلاس",
+            countryName = "آلمان",
+            flagEmoji = "🇩🇪",
+            protocol = "VLESS",
+            isVip = true,
+            pingMs = 0,
+            speedMbps = 0f,
+            configLink = "vless://8d0f2761-c586-4822-8238-757ff717fdf8@178.239.157.239:443?security=tls&sni=static.telewebion.ir&host=static.telewebion.ir&pcs=7d65a6dcf82b36ee24aa7b724cf229806dde3e7c1e55b8b0d143141feb61895e&type=ws&path=%2Fvl%2Ft%2FwDwE%2Fgfdr&encryption=none&fp=chrome&alpn=http%2F1.1#MeeLano%20%D8%A2%D9%84%D9%85%D8%A7%D9%86%203%20%D9%BE%D9%84%D8%A7%D8%B3",
+            dataRemainingGb = 0f,
+            daysRemaining = 0
         )
     )
 }

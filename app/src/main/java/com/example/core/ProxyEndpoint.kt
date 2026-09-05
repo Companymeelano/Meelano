@@ -22,6 +22,10 @@ data class ProxyEndpoint(
     val publicKey: String = "",
     val shortId: String = "",
     val method: String = "",        // shadowsocks cipher
+    /** WebSocket/HTTP `Host` header. May differ from [host] on CDN fronted nodes. */
+    val wsHost: String = "",
+    /** Requested ALPN list, e.g. `http/1.1` or `h2`. */
+    val alpn: String = "",
     val allowInsecure: Boolean = false,
     val raw: String = ""
 ) {
@@ -41,6 +45,12 @@ data class ProxyEndpoint(
     }
 
     fun isValid(): Boolean = host.isNotBlank() && port in 1..65535
+
+    /** The name to put in the TLS SNI extension. */
+    val effectiveSni: String get() = sni.ifBlank { wsHost }.ifBlank { host }
+
+    /** The name to put in the HTTP `Host` header of the WebSocket upgrade. */
+    val effectiveHost: String get() = wsHost.ifBlank { sni }.ifBlank { host }
 }
 
 enum class Protocol(val label: String, val scheme: String) {

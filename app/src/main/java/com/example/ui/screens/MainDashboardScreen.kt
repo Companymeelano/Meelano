@@ -81,6 +81,8 @@ import com.example.ui.components.HealthRing
 import com.example.ui.components.MeelanoHexagonLogo
 import com.example.ui.components.Pill
 import com.example.ui.components.PowerButton3D
+import com.example.ui.components.SectionHeader
+import com.example.ui.theme.Spacing
 import com.example.ui.components.SignalBars
 import com.example.ui.components.StatTile
 import com.example.ui.components.TrafficLineChart
@@ -151,10 +153,10 @@ fun MainDashboardScreen(
                     .statusBarsPadding()
                     .navigationBarsPadding()
                     .verticalScroll(scrollState)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = Spacing.Screen),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Spacing.Small))
 
                 TopBar(
                     connectionState = connectionState,
@@ -164,7 +166,7 @@ fun MainDashboardScreen(
                     onToggleSound = { viewModel.toggleSoundMute() }
                 )
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(Spacing.Large))
 
                 ActiveServerCard(
                     name = activeServer.name,
@@ -186,7 +188,7 @@ fun MainDashboardScreen(
                     exit = fadeOut() + shrinkVertically()
                 ) {
                     Column {
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(Spacing.Medium))
                         GlassCard(accent = MeelanoRedKillSwitch, corner = 14.dp, padding = 12.dp) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
@@ -207,7 +209,7 @@ fun MainDashboardScreen(
                     }
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Spacing.Large))
 
                 PowerButton3D(
                     state = connectionState,
@@ -218,7 +220,7 @@ fun MainDashboardScreen(
                     }
                 )
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(Spacing.Medium))
 
                 ConnectionRadar(
                     connected = isConnected,
@@ -226,7 +228,7 @@ fun MainDashboardScreen(
                     throughputMbps = liveStats.downloadMbps
                 )
 
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Spacing.Small))
 
                 LiveSpeedRow(
                     down = liveStats.downloadMbps,
@@ -234,7 +236,15 @@ fun MainDashboardScreen(
                     accent = accent
                 )
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(Spacing.Large))
+
+                SectionHeader(
+                    title = "پایش زنده",
+                    accent = accent,
+                    caption = if (isConnected) "در حال انتقال" else "غیرفعال"
+                )
+
+                Spacer(Modifier.height(Spacing.Medium))
 
                 DashboardTabs(
                     selected = dashboardTab,
@@ -242,7 +252,7 @@ fun MainDashboardScreen(
                     onSelect = { viewModel.setDashboardTab(it) }
                 )
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(Spacing.Medium))
 
                 when (dashboardTab) {
                     0 -> NetworkStatusPanel(
@@ -275,7 +285,11 @@ fun MainDashboardScreen(
                     else -> TrafficLineChart(stats = liveStats, accent = accent)
                 }
 
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(Spacing.Large))
+
+                SectionHeader(title = "دسترسی سریع", accent = accent)
+
+                Spacer(Modifier.height(Spacing.Medium))
 
                 QuickActionsRow(
                     accent = accent,
@@ -284,9 +298,9 @@ fun MainDashboardScreen(
                     onLogs = { viewModel.openLogsConsole() }
                 )
 
-                Spacer(Modifier.height(18.dp))
+                Spacer(Modifier.height(Spacing.Large))
                 Footer(accent = accent, connected = isConnected)
-                Spacer(Modifier.height(20.dp))
+                Spacer(Modifier.height(Spacing.Large))
             }
 
             Modals(

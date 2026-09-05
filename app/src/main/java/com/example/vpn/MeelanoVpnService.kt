@@ -57,6 +57,7 @@ class MeelanoVpnService : VpnService() {
         const val EXTRA_DNS_PRIMARY = "extra_dns_primary"
         const val EXTRA_DNS_SECONDARY = "extra_dns_secondary"
         const val EXTRA_IPV6 = "extra_ipv6"
+        const val EXTRA_WHITE_LABEL = "extra_white_label"
 
         private const val NOTIFICATION_ID = 9021
         private const val CHANNEL_ID = "meelano_vpn_channel"
@@ -116,6 +117,7 @@ class MeelanoVpnService : VpnService() {
                     configLink = intent.getStringExtra(EXTRA_CONFIG_LINK).orEmpty(),
                     bypassPackages = intent.getStringArrayListExtra(EXTRA_BYPASS_PACKAGES) ?: arrayListOf(),
                     killSwitch = intent.getBooleanExtra(EXTRA_KILL_SWITCH, true),
+                    whiteLabel = intent.getBooleanExtra(EXTRA_WHITE_LABEL, false),
                     routingMode = runCatching {
                         RoutingMode.valueOf(
                             intent.getStringExtra(EXTRA_ROUTING_MODE) ?: RoutingMode.SMART_BYPASS.name
@@ -142,7 +144,9 @@ class MeelanoVpnService : VpnService() {
         val routingMode: RoutingMode,
         val dnsPrimary: String,
         val dnsSecondary: String,
-        val ipv6Enabled: Boolean
+        val ipv6Enabled: Boolean,
+        /** VIP nodes hide their upstream address everywhere it could be shown. */
+        val whiteLabel: Boolean = false
     )
 
     private fun connect(request: ConnectRequest) {
@@ -166,7 +170,13 @@ class MeelanoVpnService : VpnService() {
                     return@launch
                 }
                 activeEndpoint = endpoint
-                log("Endpoint resolved → ${endpoint.summary()}")
+                log(
+                    if (request.whiteLabel) {
+                        "Endpoint resolved → ${request.serverName} · ${endpoint.displayProtocol}"
+                    } else {
+                        "Endpoint resolved → ${endpoint.summary()}"
+                    }
+                )
 
                 // ---- real outbound handshake ----
                 val handshake = TunnelEngine.handshake(endpoint) { protect(it) }
@@ -199,7 +209,11 @@ class MeelanoVpnService : VpnService() {
                     encryption = TunnelEngine.describeCipher(handshake),
                     activeProtocol = endpoint.displayProtocol,
                     pingMs = handshake.latencyMs,
-                    remoteHost = "${endpoint.host}:${endpoint.port}"
+                    remoteHost = if (request.whiteLabel) {
+                        request.serverName
+                    } else {
+                        "${endpoint.host}:${endpoint.port}"
+                    }
                 )
                 log("Tunnel established. Routing mode: ${request.routingMode.title}")
                 notifyStatus("اتصال امن برقرار است", request.serverName)
@@ -260,7 +274,13 @@ class MeelanoVpnService : VpnService() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         )
-        log("Uplink node: ${endpoint.host}:${endpoint.port} (${endpoint.displayProtocol})")
+        log(
+            if (request.whiteLabel) {
+                "Uplink node: ${request.serverName} (${endpoint.displayProtocol})"
+            } else {
+                "Uplink node: ${endpoint.host}:${endpoint.port} (${endpoint.displayProtocol})"
+            }
+        )
         builder.establish()
     } catch (e: Exception) {
         log("Builder error: ${e.message}")

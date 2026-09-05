@@ -321,3 +321,48 @@ fun GlowDot(
         )
     }
 }
+
+/**
+ * A section heading: a short accent rule, the title, and an optional trailing
+ * caption. Used to break a long scroll into scannable groups instead of an
+ * undifferentiated stack of cards.
+ */
+@Composable
+fun SectionHeader(
+    title: String,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    caption: String = ""
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .width(3.dp)
+                .height(14.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(accent, accent.copy(alpha = 0.25f))
+                    )
+                )
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = title,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold
+        )
+        if (caption.isNotBlank()) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = caption,
+                color = TextSecondary,
+                fontSize = 10.sp
+            )
+        }
+    }
+}
