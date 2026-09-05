@@ -147,8 +147,17 @@ class XrayConfigBuilderTest {
     }
 
     @Test
-    fun `hysteria2 is still refused because xray has no such outbound`() {
+    fun `hysteria2 is carried by the core's own outbound`() {
+        // Superseded: this asserted the opposite before the hysteria outbound
+        // was wired up. Xray's proxy/hysteria has client.go, so it really dials.
         val endpoint = ConfigParser.parse("hysteria2://pw@example.com:443#H2")
+        assertNotNull(endpoint)
+        assertTrue(XrayConfigBuilder.isSupported(endpoint!!))
+    }
+
+    @Test
+    fun `tuic is refused because xray has no such outbound`() {
+        val endpoint = ConfigParser.parse("tuic://id:pw@example.com:443#T")
         assertNotNull(endpoint)
         assertFalse(XrayConfigBuilder.isSupported(endpoint!!))
     }
