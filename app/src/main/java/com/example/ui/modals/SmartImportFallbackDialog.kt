@@ -100,7 +100,7 @@ fun SmartImportFallbackDialog(
                     modifier = Modifier
                         .size(54.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF0D253A)),
+                        .background(Color(0xFF181331)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

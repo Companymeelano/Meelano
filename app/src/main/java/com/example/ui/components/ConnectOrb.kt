@@ -40,6 +40,8 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.theme.MeelanoBgDarkSecondary
+import com.example.ui.theme.MeelanoRedKillSwitch
 import com.example.vpn.VpnConnectionState
 import kotlin.math.cos
 import kotlin.math.sin
@@ -71,7 +73,7 @@ fun ConnectOrb(
 
     val stateColor = when {
         connected -> accent
-        failed -> Color(0xFFFF3B5C)
+        failed -> MeelanoRedKillSwitch
         busy -> secondary
         else -> Color(0xFF7C8BA8)
     }
@@ -248,7 +250,7 @@ fun ConnectOrb(
                         colors = listOf(
                             Color.White.copy(alpha = 0.13f),
                             stateColor.copy(alpha = 0.22f),
-                            Color(0xFF141634).copy(alpha = 0.96f)
+                            MeelanoBgDarkSecondary.copy(alpha = 0.96f)
                         ),
                         center = Offset(centre.x - domeRadius * 0.3f, centre.y - domeRadius * 0.4f),
                         radius = domeRadius * 1.7f

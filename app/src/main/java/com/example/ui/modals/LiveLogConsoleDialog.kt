@@ -126,7 +126,7 @@ fun LiveLogConsoleDialog(
                         .fillMaxWidth()
                         .weight(1f)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFF05070C))
+                        .background(Color(0xFF04030F))
                         .padding(10.dp)
                 ) {
                     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(2.dp)) {

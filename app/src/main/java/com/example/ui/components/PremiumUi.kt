@@ -63,7 +63,7 @@ fun AccentBadge(
     ) {
         Text(
             text = text,
-            color = if (filled) Color(0xFF04121F) else accent,
+            color = if (filled) Color(0xFF061029) else accent,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold
         )

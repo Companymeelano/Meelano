@@ -76,7 +76,7 @@ fun MeelanoHexagonLogo(
             drawPath(
                 path = hexPath,
                 brush = Brush.linearGradient(
-                    colors = listOf(Color(0xFF2A2F5C), Color(0xFF141634)),
+                    colors = listOf(Color(0xFF241B4E), Color(0xFF0D051A)),
                     start = Offset(center.x - radius, center.y - radius),
                     end = Offset(center.x + radius, center.y + radius)
                 ),
@@ -87,7 +87,7 @@ fun MeelanoHexagonLogo(
                 drawPath(
                     path = hexPath,
                     brush = Brush.sweepGradient(
-                        listOf(accent, MeelanoCyanGlow, Color(0xFF13345C), accent),
+                        listOf(accent, MeelanoCyanGlow, Color(0xFF1F1742), accent),
                         center
                     ),
                     style = Stroke(width = 2.4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
@@ -110,7 +110,7 @@ fun MeelanoHexagonLogo(
 
             drawPath(
                 path = mPath,
-                brush = Brush.verticalGradient(listOf(accent, Color(0xFFB3ECFF))),
+                brush = Brush.verticalGradient(listOf(accent, Color(0xFFCDEBFF))),
                 style = Stroke(
                     width = this.size.width * 0.085f,
                     cap = StrokeCap.Round,
