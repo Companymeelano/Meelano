@@ -176,7 +176,7 @@ fun MainDashboardScreen(
                     accent = accent,
                     onClick = { viewModel.openServersModal() },
                     onFastest = {
-                        viewModel.connectToFastest(context, onRequestVpnPermission)
+                        viewModel.connectWithBestEffort(context, onRequestVpnPermission)
                     }
                 )
 
@@ -820,7 +820,9 @@ private fun Modals(
             onShowQr = { viewModel.showQrCode(it) },
             onSmartImport = { viewModel.triggerSmartImport(context, it.configLink) },
             onToggleFavorite = { viewModel.toggleFavorite(it) },
-            onDeleteCustom = { viewModel.deleteCustomServer(it) },
+            onDeleteCustom = { viewModel.deleteServer(it) },
+            onDeleteUnreachable = { viewModel.deleteUnreachableServers() },
+            onRestoreDeleted = { viewModel.restoreDeletedServers() },
             onOpenImport = { viewModel.openImport() }
         )
     }

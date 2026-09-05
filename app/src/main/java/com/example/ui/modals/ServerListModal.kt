@@ -24,6 +24,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.NetworkPing
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
@@ -95,6 +97,8 @@ fun ServerListModal(
     onSmartImport: (VpnServer) -> Unit,
     onToggleFavorite: (VpnServer) -> Unit,
     onDeleteCustom: (VpnServer) -> Unit,
+    onDeleteUnreachable: () -> Unit,
+    onRestoreDeleted: () -> Unit,
     onOpenImport: () -> Unit
 ) {
     val accent = LocalAccent.current.primary
@@ -215,6 +219,26 @@ fun ServerListModal(
                 )
 
                 Spacer(Modifier.height(10.dp))
+
+                // maintenance bar: keep the list clean without hunting row by row
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActionChip(
+                        text = "حذف سرورهای خراب",
+                        icon = Icons.Default.DeleteSweep,
+                        color = MeelanoRedKillSwitch,
+                        modifier = Modifier.weight(1f),
+                        onClick = onDeleteUnreachable
+                    )
+                    ActionChip(
+                        text = "بازگردانی پیش‌فرض‌ها",
+                        icon = Icons.Default.Restore,
+                        color = TextSecondary,
+                        modifier = Modifier.weight(1f),
+                        onClick = onRestoreDeleted
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
 
                 // action bar
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
