@@ -48,14 +48,73 @@ fun StatTile(
     GlassCard(modifier = modifier, corner = 14.dp, padding = 10.dp) {
         Column(Modifier.fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // The icon sits in a spherical bead rather than a flat square:
+                // a lit dome with a specular highlight and a contact shadow, so
+                // the tile has a tangible object in it instead of a coloured box.
                 Box(
-                    modifier = Modifier
-                        .size(26.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(tint.copy(alpha = 0.14f)),
+                    modifier = Modifier.size(30.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+                    Canvas(Modifier.size(30.dp)) {
+                        val r = size.minDimension / 2f
+                        val c = androidx.compose.ui.geometry.Offset(r, r)
+
+                        // Ambient glow, grounding the bead on the card.
+                        drawCircle(
+                            brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                                listOf(tint.copy(alpha = 0.30f), Color.Transparent),
+                                center = c,
+                                radius = r * 1.55f
+                            ),
+                            radius = r * 1.55f,
+                            center = c
+                        )
+                        // Body, lit from the upper-left.
+                        drawCircle(
+                            brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                                listOf(
+                                    tint.copy(alpha = 0.55f),
+                                    tint.copy(alpha = 0.20f),
+                                    Color.Black.copy(alpha = 0.30f)
+                                ),
+                                center = androidx.compose.ui.geometry.Offset(r * 0.62f, r * 0.58f),
+                                radius = r * 1.7f
+                            ),
+                            radius = r * 0.88f,
+                            center = c
+                        )
+                        // Bevel.
+                        drawCircle(
+                            brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.45f),
+                                    tint.copy(alpha = 0.25f),
+                                    Color.Transparent
+                                ),
+                                start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                                end = androidx.compose.ui.geometry.Offset(size.width, size.height)
+                            ),
+                            radius = r * 0.88f,
+                            center = c,
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.3f)
+                        )
+                        // Specular highlight.
+                        drawCircle(
+                            brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                                listOf(Color.White.copy(alpha = 0.40f), Color.Transparent),
+                                center = androidx.compose.ui.geometry.Offset(r * 0.66f, r * 0.55f),
+                                radius = r * 0.55f
+                            ),
+                            radius = r * 0.55f,
+                            center = androidx.compose.ui.geometry.Offset(r * 0.66f, r * 0.55f)
+                        )
+                    }
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.92f),
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(title, color = TextSecondary, fontSize = 10.sp, maxLines = 1)

@@ -8,6 +8,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.graphicsLayer
@@ -39,6 +40,11 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.HourglassBottom
+import androidx.compose.material.icons.filled.Lan
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Public
@@ -82,7 +88,7 @@ import com.example.data.repository.ServerRepository
 import com.example.ui.components.AuroraBackground
 import com.example.ui.components.GlassCard
 import com.example.ui.components.HealthRing
-import com.example.ui.components.MeelanoHexagonLogo
+import com.example.ui.components.MeelanoShieldLogo
 import com.example.ui.components.Pill
 import com.example.ui.components.ConnectOrb
 import com.example.ui.components.GlowDot
@@ -103,6 +109,9 @@ import com.example.ui.modals.SpeedTestDialog
 import com.example.ui.modals.SmartImportFallbackDialog
 import com.example.ui.modals.SplitTunnelingDialog
 import com.example.ui.theme.LocalAccent
+import com.example.ui.theme.MeelanoIconCyan
+import com.example.ui.theme.MeelanoIconViolet
+import androidx.compose.ui.geometry.Offset
 import com.example.ui.theme.MeelanoGoldVip
 import com.example.ui.theme.MeelanoGreenSuccess
 import com.example.ui.theme.MeelanoPurpleActive
@@ -416,12 +425,24 @@ private fun TopBar(
         ) {
             Column(horizontalAlignment = Alignment.End) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The wordmark carries the icon's neon gradient rather than
+                    // flat white, so the brand lockup and the launcher mark are
+                    // recognisably the same identity.
                     Text(
                         "MEELANO",
-                        fontSize = 14.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = TextPrimary,
-                        letterSpacing = 1.5.sp
+                        letterSpacing = 2.2.sp,
+                        style = androidx.compose.ui.text.TextStyle(
+                            brush = Brush.horizontalGradient(
+                                listOf(MeelanoIconViolet, Color(0xFFEAF4FF), MeelanoIconCyan)
+                            ),
+                            shadow = androidx.compose.ui.graphics.Shadow(
+                                color = accent.copy(alpha = 0.55f),
+                                offset = Offset.Zero,
+                                blurRadius = 18f
+                            )
+                        )
                     )
                     Spacer(Modifier.width(5.dp))
                     Box(
@@ -456,7 +477,7 @@ private fun TopBar(
                     )
                 }
             }
-            MeelanoHexagonLogo(
+            MeelanoShieldLogo(
                 size = 40.dp,
                 glowing = connectionState == VpnConnectionState.CONNECTED,
                 accent = accent
@@ -685,9 +706,9 @@ private fun NetworkStatusPanel(
         Spacer(Modifier.height(10.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile("مدت اتصال", uptime, Icons.Default.Timer, accent, Modifier.weight(1f))
-            StatTile("جریان فعال", "$flows", Icons.Default.Hub, MeelanoPurpleActive, Modifier.weight(1f))
-            StatTile("پرس‌وجوی DNS", "$dnsQueries", Icons.Default.Dns, MeelanoGreenSuccess, Modifier.weight(1f))
+            StatTile("مدت اتصال", uptime, Icons.Default.HourglassBottom, accent, Modifier.weight(1f))
+            StatTile("جریان فعال", "$flows", Icons.Default.Lan, MeelanoPurpleActive, Modifier.weight(1f))
+            StatTile("پرس‌وجوی DNS", "$dnsQueries", Icons.Default.TravelExplore, MeelanoGreenSuccess, Modifier.weight(1f))
         }
 
         Spacer(Modifier.height(10.dp))
@@ -696,14 +717,14 @@ private fun NetworkStatusPanel(
             StatTile(
                 "کل دریافت",
                 "${"%.1f".format(downloadedMb)} MB",
-                Icons.Default.Download,
+                Icons.Default.CloudDownload,
                 accent,
                 Modifier.weight(1f)
             )
             StatTile(
                 "کل ارسال",
                 "${"%.1f".format(uploadedMb)} MB",
-                Icons.Default.Upload,
+                Icons.Default.CloudUpload,
                 MeelanoGreenSuccess,
                 Modifier.weight(1f)
             )
@@ -889,19 +910,60 @@ private fun ToolCard(
         onClick = onClick
     ) {
         Column {
+            // The icon sits on a raised tile: a cast shadow beneath, a body lit
+            // from the top-left, a bright bevel on the lit edges and a dark one
+            // on the shaded edges. It reads as a key you can press.
             Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(tint.copy(alpha = iconGlow + 0.08f), tint.copy(alpha = iconGlow))
-                        )
-                    )
-                    .border(1.dp, tint.copy(alpha = 0.22f), RoundedCornerShape(11.dp)),
+                modifier = Modifier.size(38.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, null, tint = tint, modifier = Modifier.size(17.dp))
+                Canvas(Modifier.size(38.dp)) {
+                    val r = 11.dp.toPx()
+                    val radius = androidx.compose.ui.geometry.CornerRadius(r, r)
+                    val lift = if (pressed) 1f else 3f
+
+                    drawRoundRect(
+                        color = Color.Black.copy(alpha = 0.40f),
+                        topLeft = androidx.compose.ui.geometry.Offset(0f, lift),
+                        size = size,
+                        cornerRadius = radius
+                    )
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                tint.copy(alpha = iconGlow + 0.30f),
+                                tint.copy(alpha = iconGlow + 0.04f)
+                            ),
+                            start = androidx.compose.ui.geometry.Offset.Zero,
+                            end = androidx.compose.ui.geometry.Offset(size.width, size.height)
+                        ),
+                        size = size,
+                        cornerRadius = radius
+                    )
+                    drawRoundRect(
+                        brush = Brush.linearGradient(
+                            listOf(
+                                Color.White.copy(alpha = 0.50f),
+                                tint.copy(alpha = 0.20f),
+                                Color.Black.copy(alpha = 0.32f)
+                            ),
+                            start = androidx.compose.ui.geometry.Offset.Zero,
+                            end = androidx.compose.ui.geometry.Offset(size.width, size.height)
+                        ),
+                        size = size,
+                        cornerRadius = radius,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5f)
+                    )
+                    // Glossy top face.
+                    drawRoundRect(
+                        brush = Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.17f), Color.Transparent)
+                        ),
+                        size = size.copy(height = size.height * 0.45f),
+                        cornerRadius = radius
+                    )
+                }
+                Icon(icon, null, tint = Color.White.copy(alpha = 0.95f), modifier = Modifier.size(18.dp))
             }
             Spacer(Modifier.height(Spacing.Small))
             Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
@@ -921,7 +983,7 @@ private fun Footer(accent: Color, connected: Boolean) {
                 .padding(horizontal = 14.dp, vertical = 6.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MeelanoHexagonLogo(size = 16.dp, glowing = connected, accent = accent)
+                MeelanoShieldLogo(size = 16.dp, glowing = connected, accent = accent)
                 Spacer(Modifier.width(6.dp))
                 Text(
                     "MEELANO STUDIO DESIGN",

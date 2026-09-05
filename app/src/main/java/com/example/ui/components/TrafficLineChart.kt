@@ -113,21 +113,56 @@ fun TrafficLineChart(
                         close()
                     }
 
+                    // Volumetric fill: several stacked stops rather than one
+                    // fade, so the body of the graph has depth instead of
+                    // dissolving straight to nothing.
                     drawPath(
                         path = area,
                         brush = Brush.verticalGradient(
-                            listOf(accent.copy(alpha = 0.35f), Color.Transparent)
+                            colorStops = arrayOf(
+                                0.00f to accent.copy(alpha = 0.48f),
+                                0.35f to accent.copy(alpha = 0.22f),
+                                0.75f to accent.copy(alpha = 0.06f),
+                                1.00f to Color.Transparent
+                            )
                         )
+                    )
+
+                    // The trace is drawn three times — a wide soft bloom, the
+                    // body, then a fine white core — the same neon-tube
+                    // construction used by the logo and the connect orb.
+                    val neon = Brush.horizontalGradient(listOf(accent, MeelanoGreenSuccess))
+                    drawPath(
+                        path = line,
+                        brush = neon,
+                        alpha = 0.20f,
+                        style = Stroke(width = 8f.dp.toPx(), cap = StrokeCap.Round)
                     )
                     drawPath(
                         path = line,
-                        brush = Brush.horizontalGradient(listOf(accent, MeelanoGreenSuccess)),
+                        brush = neon,
                         style = Stroke(width = 2.6f.dp.toPx(), cap = StrokeCap.Round)
                     )
+                    drawPath(
+                        path = line,
+                        color = Color.White.copy(alpha = 0.55f),
+                        style = Stroke(width = 0.9f.dp.toPx(), cap = StrokeCap.Round)
+                    )
 
+                    // Leading marker, built as a lit bead so it sits above the
+                    // trace rather than on it.
                     val last = pointAt(series.size - 1)
-                    drawCircle(accent.copy(alpha = 0.25f), radius = 12f, center = last)
-                    drawCircle(accent, radius = 4.5f, center = last)
+                    drawCircle(accent.copy(alpha = 0.22f), radius = 15f, center = last)
+                    drawCircle(accent.copy(alpha = 0.38f), radius = 8f, center = last)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            listOf(Color.White, accent),
+                            center = Offset(last.x - 1.4f, last.y - 1.4f),
+                            radius = 7f
+                        ),
+                        radius = 4.6f,
+                        center = last
+                    )
                 }
             }
 

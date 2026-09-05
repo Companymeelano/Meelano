@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MeelanoBgDarkSecondary
+import com.example.ui.theme.MeelanoBgMid
 import com.example.ui.theme.MeelanoRedKillSwitch
 import com.example.vpn.VpnConnectionState
 import kotlin.math.cos
@@ -317,46 +318,15 @@ fun ConnectOrb(
                     }
                 }
 
-                // ---- 6. glass dome ----
+                // ---- 6. the globe the shield sits on ----
+                //
+                // A real sphere rather than a flat disc: the graticule is
+                // projected in perspective so its rings bow and compress toward
+                // the limb, the terminator shades the lower-right into shadow,
+                // and a rim light traces the edge. The shield then sits in front
+                // of it, so the crest reads as guarding the planet.
                 val domeRadius = base * 0.52f * scale
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.13f),
-                            stateColor.copy(alpha = 0.22f),
-                            MeelanoBgDarkSecondary.copy(alpha = 0.96f)
-                        ),
-                        center = Offset(centre.x - domeRadius * 0.3f, centre.y - domeRadius * 0.4f),
-                        radius = domeRadius * 1.7f
-                    ),
-                    radius = domeRadius,
-                    center = centre
-                )
-                // Chrome bevel, echoing the launcher icon's shield edge.
-                drawCircle(
-                    brush = Brush.linearGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.55f),
-                            stateColor.copy(alpha = 0.30f),
-                            Color.White.copy(alpha = 0.10f)
-                        ),
-                        start = Offset(centre.x - domeRadius, centre.y - domeRadius),
-                        end = Offset(centre.x + domeRadius, centre.y + domeRadius)
-                    ),
-                    radius = domeRadius,
-                    center = centre,
-                    style = Stroke(width = 2.2f)
-                )
-                // Specular highlight.
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.White.copy(alpha = 0.30f), Color.Transparent),
-                        center = Offset(centre.x - domeRadius * 0.35f, centre.y - domeRadius * 0.5f),
-                        radius = domeRadius * 0.65f
-                    ),
-                    radius = domeRadius * 0.65f,
-                    center = Offset(centre.x - domeRadius * 0.35f, centre.y - domeRadius * 0.5f)
-                )
+                drawGlobe(centre, domeRadius, spin, stateColor, secondaryTone, glow)
 
                 // ---- 7. the shield + neon M, straight from the launcher icon ----
                 drawShieldCrest(centre, domeRadius * 0.86f, stateColor, glow, connected)
@@ -497,5 +467,128 @@ private fun DrawScope.drawNeonM(centre: Offset, size: Float, glow: Float, connec
         path = m,
         color = Color.White.copy(alpha = 0.55f * intensity),
         style = Stroke(width = size * 0.05f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+}
+
+/**
+ * A three-dimensional Earth.
+ *
+ * Every graticule point is a coordinate on a unit sphere that is rotated about
+ * the polar axis and perspective-projected, so the lines genuinely bow toward
+ * the limb instead of being drawn as ellipses. Lighting is a single lamp at the
+ * upper-left: a radial body gradient establishes form, a terminator darkens the
+ * far side, and a thin rim light separates the sphere from the background.
+ */
+private fun DrawScope.drawGlobe(
+    centre: Offset,
+    radius: Float,
+    spin: Float,
+    accent: Color,
+    secondary: Color,
+    glow: Float
+) {
+    val tilt = -0.38f
+    val camera = 2.7f
+    val phase = Math.toRadians(spin.toDouble()).toFloat()
+
+    fun project(x: Float, y: Float, z: Float): Triple<Offset, Float, Float> {
+        val cs = cos(phase)
+        val sn = sin(phase)
+        val x1 = x * cs - z * sn
+        val z1 = x * sn + z * cs
+        val ct = cos(tilt)
+        val st = sin(tilt)
+        val y2 = y * ct - z1 * st
+        val z2 = y * st + z1 * ct
+        val p = camera / (camera - z2)
+        return Triple(
+            Offset(centre.x + x1 * radius * p, centre.y + y2 * radius * p),
+            (z2 + 1f) / 2f,
+            p
+        )
+    }
+
+    // Body: lit from the upper-left, falling into shadow at the lower-right.
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                accent.copy(alpha = 0.30f),
+                MeelanoBgMid.copy(alpha = 0.94f),
+                MeelanoBgDarkSecondary
+            ),
+            center = Offset(centre.x - radius * 0.38f, centre.y - radius * 0.44f),
+            radius = radius * 1.85f
+        ),
+        radius = radius,
+        center = centre
+    )
+
+    // Graticule. Latitudes first, then meridians, each segment shaded by depth
+    // so the far side of the sphere recedes.
+    for (ring in 1 until 7) {
+        val phi = (Math.PI * ring / 7).toFloat()
+        val y = cos(phi)
+        val rr = sin(phi)
+        var prev: Triple<Offset, Float, Float>? = null
+        for (step in 0..44) {
+            val theta = (2 * Math.PI * step / 44).toFloat()
+            val point = project(cos(theta) * rr, y, sin(theta) * rr)
+            prev?.let { from ->
+                val depth = (from.second + point.second) / 2f
+                drawLine(
+                    color = accent.copy(alpha = (0.04f + 0.30f * depth * depth) * (0.5f + 0.5f * glow)),
+                    start = from.first,
+                    end = point.first,
+                    strokeWidth = 0.6f + 1.0f * depth
+                )
+            }
+            prev = point
+        }
+    }
+    for (m in 0 until 9) {
+        val theta = (2 * Math.PI * m / 9).toFloat()
+        var prev: Triple<Offset, Float, Float>? = null
+        for (step in 0..36) {
+            val phi = (Math.PI * step / 36).toFloat()
+            val point = project(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
+            prev?.let { from ->
+                val depth = (from.second + point.second) / 2f
+                drawLine(
+                    color = secondary.copy(alpha = (0.03f + 0.22f * depth * depth) * (0.5f + 0.5f * glow)),
+                    start = from.first,
+                    end = point.first,
+                    strokeWidth = 0.5f + 0.8f * depth
+                )
+            }
+            prev = point
+        }
+    }
+
+    // Terminator: a soft shadow washing the unlit limb.
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
+            center = Offset(centre.x - radius * 0.30f, centre.y - radius * 0.34f),
+            radius = radius * 1.55f
+        ),
+        radius = radius,
+        center = centre
+    )
+
+    // Atmospheric rim light.
+    drawCircle(
+        color = accent.copy(alpha = 0.30f + 0.35f * glow),
+        radius = radius,
+        center = centre,
+        style = Stroke(width = 1.8f)
+    )
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(Color.Transparent, accent.copy(alpha = 0.18f * glow)),
+            center = centre,
+            radius = radius * 1.16f
+        ),
+        radius = radius * 1.16f,
+        center = centre
     )
 }

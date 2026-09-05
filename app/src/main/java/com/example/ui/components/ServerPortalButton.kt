@@ -201,12 +201,7 @@ fun ServerPortalButton(
                         fontWeight = FontWeight.Bold
                     )
                     if (pingMs in 1..9_998) {
-                        Box(
-                            Modifier
-                                .size(3.dp)
-                                .clip(RoundedCornerShape(50))
-                                .let { it }
-                        ) {}
+                        Text("·", color = TextSecondary, fontSize = 10.sp)
                         Text(
                             "$pingMs ms",
                             color = MeelanoGreenSuccess,

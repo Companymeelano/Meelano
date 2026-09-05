@@ -37,7 +37,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.security.SecurityManager
 import com.example.ui.components.AuroraBackground
-import com.example.ui.components.MeelanoHexagonLogo
+import com.example.ui.components.MeelanoShieldLogo
 import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoGreenSuccess
 import com.example.ui.theme.MeelanoRedKillSwitch
@@ -77,7 +77,7 @@ fun SecurityLockScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                MeelanoHexagonLogo(size = 78.dp, glowing = true, accent = accent)
+                MeelanoShieldLogo(size = 78.dp, glowing = true, accent = accent)
                 Spacer(Modifier.height(16.dp))
                 Text("MeeLano Tunnel", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
                 Text("برای ادامه، پین‌کد را وارد کنید", fontSize = 11.sp, color = TextSecondary)

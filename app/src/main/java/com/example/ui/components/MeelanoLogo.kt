@@ -25,15 +25,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.ui.theme.MeelanoCyan
 import com.example.ui.theme.MeelanoCyanGlow
-import kotlin.math.cos
-import kotlin.math.sin
+import com.example.ui.theme.MeelanoIconViolet
+import com.example.ui.theme.MeelanoIconCyan
 
 /**
  * The MeeLano mark: a machined hexagon shield with a beveled "M", an orbiting
  * light sweep when the tunnel is live, and a soft outer bloom.
  */
 @Composable
-fun MeelanoHexagonLogo(
+fun MeelanoShieldLogo(
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
     glowing: Boolean = true,
@@ -64,17 +64,32 @@ fun MeelanoHexagonLogo(
                 )
             }
 
-            val hexPath = Path()
-            for (i in 0..5) {
-                val angle = Math.toRadians((60 * i - 30).toDouble())
-                val x = center.x + (radius * cos(angle)).toFloat()
-                val y = center.y + (radius * sin(angle)).toFloat()
-                if (i == 0) hexPath.moveTo(x, y) else hexPath.lineTo(x, y)
+            // A heater shield, matching the launcher icon. The header used to
+            // show a hexagon, which shared no vocabulary with the app's mark.
+            val shieldPath = Path()
+            run {
+                val halfWidth = radius * 0.86f
+                val top = center.y - radius * 0.94f
+                val bottom = center.y + radius * 1.00f
+                val shoulder = top + radius * 0.62f
+                shieldPath.moveTo(center.x - halfWidth, top)
+                shieldPath.lineTo(center.x + halfWidth, top)
+                shieldPath.lineTo(center.x + halfWidth, shoulder)
+                shieldPath.cubicTo(
+                    center.x + halfWidth, bottom - radius * 0.46f,
+                    center.x + halfWidth * 0.54f, bottom - radius * 0.10f,
+                    center.x, bottom
+                )
+                shieldPath.cubicTo(
+                    center.x - halfWidth * 0.54f, bottom - radius * 0.10f,
+                    center.x - halfWidth, bottom - radius * 0.46f,
+                    center.x - halfWidth, shoulder
+                )
+                shieldPath.close()
             }
-            hexPath.close()
 
             drawPath(
-                path = hexPath,
+                path = shieldPath,
                 brush = Brush.linearGradient(
                     colors = listOf(Color(0xFF241B4E), Color(0xFF0D051A)),
                     start = Offset(center.x - radius, center.y - radius),
@@ -85,7 +100,7 @@ fun MeelanoHexagonLogo(
 
             rotate(sweep, center) {
                 drawPath(
-                    path = hexPath,
+                    path = shieldPath,
                     brush = Brush.sweepGradient(
                         listOf(accent, MeelanoCyanGlow, Color(0xFF1F1742), accent),
                         center
@@ -108,14 +123,29 @@ fun MeelanoHexagonLogo(
             mPath.lineTo(endX, topY)
             mPath.lineTo(endX, bottomY)
 
+            // Neon tube: bloom, body, then a white core — the same construction
+            // as the icon, which is what makes the stroke read as lit glass.
+            val tubeBrush = Brush.linearGradient(
+                listOf(MeelanoIconCyan, Color(0xFF7A9BFF), MeelanoIconViolet),
+                start = Offset(startX, center.y),
+                end = Offset(endX, center.y)
+            )
+            val tube = this.size.width * 0.085f
             drawPath(
                 path = mPath,
-                brush = Brush.verticalGradient(listOf(accent, Color(0xFFCDEBFF))),
-                style = Stroke(
-                    width = this.size.width * 0.085f,
-                    cap = StrokeCap.Round,
-                    join = StrokeJoin.Round
-                )
+                brush = tubeBrush,
+                alpha = 0.22f,
+                style = Stroke(tube * 2.6f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+            drawPath(
+                path = mPath,
+                brush = tubeBrush,
+                style = Stroke(tube, cap = StrokeCap.Round, join = StrokeJoin.Round)
+            )
+            drawPath(
+                path = mPath,
+                color = Color.White.copy(alpha = 0.60f),
+                style = Stroke(tube * 0.34f, cap = StrokeCap.Round, join = StrokeJoin.Round)
             )
         }
     }
