@@ -38,6 +38,22 @@
 
 A dark "aurora" canvas with drifting blooms, a procedural hex grid and a star field; frosted-glass cards with gradient hairline borders; a layered energy-orb power button whose ring speed and glow follow the real tunnel state; a live packet-flow radar; and a smoothed throughput spline. **Six** selectable accent themes (نئون / زمرد / بنفش / طلایی / غروب / شفق قطبی) and full RTL layout.
 
+The entire palette is sampled from the launcher icon — the `#0E102A`/`#212750` indigo canvas,
+the `#40526F` chrome bevel and the cyan/violet neon of the "M" — and shipped as the default
+**امضای میلانو** accent, so the app shell and its icon read as one object. The launch window
+background matches too, removing the startup colour flash.
+
+The home screen is deliberately sparse: a brand lockup with a single grouped utility capsule
+(lock + sound), the connect orb, live speeds, and one tabbed panel. Controls are grouped by
+intent — **مسیریابی** (where traffic goes), **حفاظت** (what protects you) and **مدیریت**
+(servers, configs, diagnostics) — and each destination appears exactly once.
+
+`ConnectOrb` is the hero control: expanding shock rings, a counter-rotating dashed containment
+ring, a sweeping radar arc that accelerates while connecting, orbiting energy particles, and a
+glass dome with a chrome bevel and specular highlight echoing the icon. Every property is
+driven by the real tunnel state. `ServerScanOverlay` turns node testing into a full-screen
+radar sweep whose blips light up as the beam passes them.
+
 The launcher icon is a ray-traced 3D obsidian-glass shield holding a neon "M", shipped as a proper **adaptive icon** (separate background/foreground layers so it animates and masks correctly on every launcher shape), with legacy square/round bitmaps for pre-Oreo devices and a **themed monochrome** layer for Android 13+ wallpaper tinting.
 
 `PremiumUi.kt` adds the shared polish: accent badges, fading dividers, shimmer placeholders, glow progress bars, a live equaliser and a sweep-gradient circular gauge.
