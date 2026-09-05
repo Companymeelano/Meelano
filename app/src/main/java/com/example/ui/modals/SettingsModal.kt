@@ -19,6 +19,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.filled.AltRoute
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.TravelExplore
+import androidx.compose.ui.graphics.Brush
+import com.example.ui.theme.MeelanoIconCyan
+import com.example.ui.theme.MeelanoIconViolet
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.Construction
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -128,7 +140,7 @@ fun SettingsModal(
 
                 Spacer(Modifier.height(14.dp))
 
-                SectionTitle("مسیریابی")
+                SectionTitle("مسیریابی", Icons.Default.AltRoute, MeelanoIconCyan)
                 RoutingMode.entries.forEach { mode ->
                     val selected = mode == routingMode
                     GlassCard(
@@ -154,7 +166,7 @@ fun SettingsModal(
                 }
 
                 Spacer(Modifier.height(6.dp))
-                SectionTitle("فیلتر پروتکل هسته")
+                SectionTitle("فیلتر پروتکل هسته", Icons.Default.FilterAlt, MeelanoIconViolet)
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -184,7 +196,7 @@ fun SettingsModal(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("امنیت")
+                SectionTitle("امنیت", Icons.Default.Shield, MeelanoGreenSuccess)
                 SettingSwitch(
                     "Kill Switch",
                     "قطع کامل ترافیک هنگام افت تونل (رابط در حالت blocking)",
@@ -215,13 +227,13 @@ fun SettingsModal(
                 )
 
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("اتصال")
+                SectionTitle("اتصال", Icons.Default.Bolt, MeelanoIconCyan)
                 SettingSwitch("اتصال خودکار", "با باز شدن اپ به‌صورت خودکار وصل شو", autoConnectEnabled, accent, onToggleAutoConnect)
                 SettingSwitch("پشتیبانی IPv6", "افزودن مسیر IPv6 به تونل", ipv6Enabled, accent, onToggleIpv6)
                 SettingSwitch("بازخورد لمسی", "لرزش هنگام تغییر وضعیت اتصال", hapticsEnabled, accent, onToggleHaptics)
 
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("رنگ‌بندی برنامه")
+                SectionTitle("رنگ‌بندی برنامه", Icons.Default.Palette, MeelanoIconViolet)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AccentPreset.entries.forEach { preset ->
                         val selected = preset.key == themeAccent
@@ -256,7 +268,7 @@ fun SettingsModal(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("DNS")
+                SectionTitle("DNS", Icons.Default.TravelExplore, MeelanoGreenSuccess)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CompactField(dns1, { dns1 = it }, "DNS اول", Modifier.weight(1f))
                     CompactField(dns2, { dns2 = it }, "DNS دوم", Modifier.weight(1f))
@@ -289,7 +301,7 @@ fun SettingsModal(
                 PrimaryButton("ذخیره DNS", accent) { onDnsChange(dns1.trim(), dns2.trim()) }
 
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("اشتراک‌های سرور (${subscriptions.size})")
+                SectionTitle("اشتراک‌های سرور (${subscriptions.size})", Icons.Default.CloudSync, MeelanoIconCyan)
                 subscriptions.forEach { url ->
                     GlassCard(Modifier.fillMaxWidth().padding(bottom = 6.dp), corner = 12.dp, padding = 10.dp) {
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -331,7 +343,7 @@ fun SettingsModal(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("ابزارها")
+                SectionTitle("ابزارها", Icons.Default.Construction, MeelanoIconViolet)
                 ToolRow("تونل تفکیکی (Split Tunneling)", MeelanoPurpleActive, onOpenSplitTunneling)
                 ToolRow("کنسول لاگ زنده", MeelanoGreenSuccess, onOpenLogs)
                 ToolRow("قفل کردن برنامه", MeelanoGoldVip, onLockApp)
@@ -344,7 +356,7 @@ fun SettingsModal(
 
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    "MeeLano Tunnel · نسخه ۱۲٫۰ · MEELANO STUDIO DESIGN",
+                    "MeeLano Tunnel · نسخه ۱۳٫۰ · MEELANO STUDIO DESIGN",
                     fontSize = 9.sp,
                     color = TextMuted,
                     modifier = Modifier.fillMaxWidth(),
@@ -356,14 +368,38 @@ fun SettingsModal(
 }
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        fontSize = 12.sp,
-        fontWeight = FontWeight.ExtraBold,
-        color = TextPrimary,
-        modifier = Modifier.padding(bottom = 8.dp)
-    )
+private fun SectionTitle(
+    text: String,
+    icon: ImageVector? = null,
+    accent: Color = MeelanoIconCyan
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(bottom = 9.dp)
+    ) {
+        // A short gradient bar anchors each section to the app's palette and
+        // gives the list a visual rhythm that plain text headings lacked.
+        Box(
+            Modifier
+                .size(width = 3.dp, height = 15.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(
+                    Brush.verticalGradient(listOf(accent, accent.copy(alpha = 0.25f)))
+                )
+        )
+        Spacer(Modifier.width(8.dp))
+        if (icon != null) {
+            Icon(icon, null, tint = accent, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            text,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = TextPrimary,
+            letterSpacing = 0.3.sp
+        )
+    }
 }
 
 @Composable

@@ -298,7 +298,7 @@ class ServerRepository(
     suspend fun refreshFreeServers(keep: Int = 20): Result<List<VpnServer>> = withContext(Dispatchers.IO) {
         try {
             val sources = settings.subscriptions.first().toList()
-            _updateProgress.value = UpdateProgress("دریافت اشتراک‌ها…", 0, sources.size)
+            _updateProgress.value = UpdateProgress("۱ از ۳ · دریافت فهرست سرورها", 0, sources.size)
 
             val endpoints = LinkedHashMap<String, ProxyEndpoint>()
             var reachedAnySource = false
@@ -320,7 +320,7 @@ class ServerRepository(
                                 }
                             }
                             _updateProgress.value =
-                                UpdateProgress("دریافت اشتراک‌ها…", index + 1, sources.size)
+                                UpdateProgress("۱ از ۳ · دریافت فهرست سرورها", index + 1, sources.size)
                         }
                     }
                 }.awaitAll()
@@ -351,7 +351,7 @@ class ServerRepository(
                 .toList()
 
             // Stage 2 — cheap TCP reachability, to shrink the field fast.
-            _updateProgress.value = UpdateProgress("تست دسترسی ${eligible.size} نود…", 0, eligible.size)
+            _updateProgress.value = UpdateProgress("۲ از ۳ · تست دسترسی ${eligible.size} نود", 0, eligible.size)
             val reachable = PingTester.pingAll(
                 items = eligible.take(400),
                 parallelism = 32,
@@ -359,7 +359,7 @@ class ServerRepository(
                 keyOf = { "${it.host}:${it.port}" },
                 addressOf = { it.host to it.port },
                 onProgress = { done, total ->
-                    _updateProgress.value = UpdateProgress("تست دسترسی…", done, total)
+                    _updateProgress.value = UpdateProgress("۲ از ۳ · تست دسترسی", done, total)
                 }
             ).let { latencies ->
                 eligible.mapNotNull { endpoint ->
@@ -391,7 +391,7 @@ class ServerRepository(
             val probeable = reachableEndpoints.filter { NodeValidator.isProbeable(it) }
             val coreOnly = reachableEndpoints.filterNot { NodeValidator.isProbeable(it) }
 
-            _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی ${probeable.size} نود…", 0, probeable.size)
+            _updateProgress.value = UpdateProgress("۳ از ۳ · اعتبارسنجی ${probeable.size} نود", 0, probeable.size)
             val validated = NodeValidator.validateAll(
                 endpoints = probeable,
                 parallelism = 24,
@@ -399,7 +399,7 @@ class ServerRepository(
                 // Once we have comfortably more than the user will see, stop.
                 target = keep + 6,
                 onProgress = { done, total ->
-                    _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی…", done, total)
+                    _updateProgress.value = UpdateProgress("۳ از ۳ · اعتبارسنجی نودها", done, total)
                 }
             )
 

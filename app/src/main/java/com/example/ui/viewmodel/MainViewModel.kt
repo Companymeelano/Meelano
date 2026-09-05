@@ -483,11 +483,17 @@ class MainViewModel(
             repository.refreshFreeServers()
                 .onSuccess { list ->
                     MeelanoVpnService.log("Subscriptions updated: ${list.size} live nodes")
-                    if (!silent) _toast.value = "${list.size} سرور فعال دریافت شد"
+                    if (!silent) {
+                        SoundEngine.play(SoundEngine.Cue.SUCCESS)
+                        _toast.value = "${list.size} سرور فعال دریافت شد"
+                    }
                 }
                 .onFailure { error ->
                     MeelanoVpnService.log("Subscription update failed: ${error.message}")
-                    if (!silent) _toast.value = error.message ?: "به‌روزرسانی ناموفق بود"
+                    if (!silent) {
+                        SoundEngine.play(SoundEngine.Cue.ERROR)
+                        _toast.value = error.message ?: "به‌روزرسانی ناموفق بود"
+                    }
                 }
             _isUpdatingGitHub.value = false
         }
