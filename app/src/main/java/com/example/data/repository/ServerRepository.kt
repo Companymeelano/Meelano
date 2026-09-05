@@ -7,6 +7,7 @@ import com.example.core.ConfigParser
 import com.example.core.NodeValidator
 import com.example.core.PingTester
 import com.example.vpn.proto.OutboundFactory
+import com.example.vpn.xray.XrayConfigBuilder
 import com.example.core.Protocol
 import com.example.core.ProxyEndpoint
 import com.example.data.model.BypassApp
@@ -340,8 +341,12 @@ class ServerRepository(
 
             // Stage 1 — structural filter. Drop anything this build cannot carry
             // and anything the user deleted, before spending time on the network.
+            // Accept anything EITHER engine can carry. Gating on the Kotlin
+            // outbounds alone discarded every Reality node — 206 of 581 in the
+            // main upstream feed — even though the bundled Xray core connects to
+            // them natively.
             val eligible = endpoints.values
-                .filter { OutboundFactory.supports(it) }
+                .filter { OutboundFactory.supports(it) || XrayConfigBuilder.isSupported(it) }
                 .filterNot { "free_${it.host}_${it.port}" in hidden }
                 .toList()
 
@@ -378,9 +383,17 @@ class ServerRepository(
             // Stage 3 — the strict test: a real protocol handshake plus a live
             // HTTP request proxied through the node. Only nodes that genuinely
             // relayed traffic survive this, which is what makes the list usable.
-            _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی ${reachableEndpoints.size} نود…", 0, reachable.size)
+            //
+            // Only nodes the Kotlin stack can speak are probed. A Reality node
+            // cannot be verified this way, so probing it would guarantee a
+            // false negative; those are carried through to the list on their TCP
+            // result and left for the Xray core to dial.
+            val probeable = reachableEndpoints.filter { NodeValidator.isProbeable(it) }
+            val coreOnly = reachableEndpoints.filterNot { NodeValidator.isProbeable(it) }
+
+            _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی ${probeable.size} نود…", 0, probeable.size)
             val validated = NodeValidator.validateAll(
-                endpoints = reachableEndpoints,
+                endpoints = probeable,
                 parallelism = 24,
                 probeTimeoutMs = 4_000,
                 // Once we have comfortably more than the user will see, stop.
@@ -394,8 +407,16 @@ class ServerRepository(
             // an empty list. If the deep probe cleared nothing — which happens when
             // the phone is behind a captive portal or heavy DPI — fall back to the
             // nodes that at least answered TCP, clearly marked as unverified.
+            // Reality/xhttp nodes ride along on their measured TCP latency.
+            val coreOnlyPairs = coreOnly.mapNotNull { endpoint ->
+                reachable.firstOrNull { it.first === endpoint }
+            }
+
             val verifiedFirst: List<Pair<ProxyEndpoint, Int>> = if (validated.isNotEmpty()) {
-                validated.map { it.endpoint to it.latencyMs }
+                (validated.map { it.endpoint to it.latencyMs } + coreOnlyPairs)
+                    .sortedBy { it.second }
+            } else if (coreOnlyPairs.isNotEmpty()) {
+                coreOnlyPairs.sortedBy { it.second }
             } else {
                 reachable
             }

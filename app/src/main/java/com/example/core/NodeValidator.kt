@@ -89,6 +89,17 @@ object NodeValidator {
     }
 
     /** Runs the full handshake-and-relay check against one node. */
+    /**
+     * Nodes the app can carry via *some* engine.
+     *
+     * The deep probe below speaks the Kotlin protocol stack, so it cannot verify
+     * a Reality node even though the bundled Xray core can happily connect to
+     * one. Treat those as acceptable rather than filtering them out — otherwise
+     * adopting the core would gain us nothing in the server list.
+     */
+    fun isProbeable(endpoint: ProxyEndpoint): Boolean =
+        OutboundFactory.supports(endpoint)
+
     suspend fun validate(
         endpoint: ProxyEndpoint,
         timeoutMs: Long = 6_000,

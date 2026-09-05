@@ -30,6 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
+import com.example.vpn.xray.XrayConfigBuilder
+import com.example.vpn.xray.XrayCore
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -113,6 +116,9 @@ class MeelanoVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        // Unpacks geoip/geosite and points the core at them. Cheap and
+        // idempotent, and doing it here keeps it off the connect path.
+        XrayCore.initialise(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -206,13 +212,37 @@ class MeelanoVpnService : VpnService() {
                     }
                 )
 
-                // ---- real outbound handshake ----
-                val handshake = TunnelEngine.handshake(endpoint) { protect(it) }
-                if (!handshake.success) {
-                    fail("اتصال به ${endpoint.host}:${endpoint.port} ناموفق بود → ${handshake.error}")
-                    return@launch
+                // Which engine can carry this node?
+                //
+                // Xray implements Reality, xhttp, QUIC transports and SS2022 —
+                // everything the hand-written Kotlin engine has to refuse. When
+                // the core is present it takes anything it supports; the Kotlin
+                // engine remains the fallback so the app still works if the AAR
+                // is missing from a build.
+                val useXray = XrayCore.isAvailable && XrayConfigBuilder.isSupported(endpoint)
+                if (useXray) {
+                    log("Engine: Xray core ${XrayCore.version().orEmpty()}")
+                } else if (XrayCore.isAvailable) {
+                    log("Engine: built-in (Xray cannot carry ${endpoint.displayProtocol})")
+                } else {
+                    log("Engine: built-in Kotlin tunnel")
                 }
-                log("Handshake OK in ${handshake.latencyMs}ms · ${TunnelEngine.describeCipher(handshake)}")
+
+                // ---- real outbound handshake ----
+                //
+                // Skipped for Xray: the core dials the node itself, and probing
+                // first would double the connect time for no benefit. Reality
+                // nodes in particular cannot be probed by the Kotlin engine at
+                // all, which is the whole reason the core is here.
+                var handshake: TunnelEngine.HandshakeResult? = null
+                if (!useXray) {
+                    handshake = TunnelEngine.handshake(endpoint) { protect(it) }
+                    if (!handshake.success) {
+                        fail("اتصال به ${endpoint.host}:${endpoint.port} ناموفق بود → ${handshake.error}")
+                        return@launch
+                    }
+                    log("Handshake OK in ${handshake.latencyMs}ms · ${TunnelEngine.describeCipher(handshake)}")
+                }
 
                 if (request.routingMode == RoutingMode.DIRECT) {
                     log("Routing mode = DIRECT: no tunnel is installed, traffic stays on the default interface.")
@@ -231,12 +261,30 @@ class MeelanoVpnService : VpnService() {
                 sessionStartedAt = System.currentTimeMillis()
                 counter = TrafficCounter(android.os.Process.myUid())
 
+                // Hand the TUN descriptor to the core before declaring success,
+                // so a core that refuses the config reports a failure instead of
+                // leaving a dead "connected" tunnel on screen.
+                if (useXray) {
+                    val config = XrayConfigBuilder.build(
+                        endpoint = endpoint,
+                        dnsPrimary = request.dnsPrimary,
+                        dnsSecondary = request.dnsSecondary,
+                        bypassLan = request.routingMode != RoutingMode.GLOBAL
+                    )
+                    val error = XrayCore.start(config, descriptor.fd) { status -> log("Xray: $status") }
+                    if (error != null) {
+                        fail("راه‌اندازی هستهٔ Xray ناموفق بود → $error")
+                        return@launch
+                    }
+                }
+
                 _connectionState.value = VpnConnectionState.CONNECTED
                 _liveStats.value = NetworkLiveStats(
                     tunnelIp = "172.19.0.1",
-                    encryption = TunnelEngine.describeCipher(handshake),
+                    encryption = handshake?.let { TunnelEngine.describeCipher(it) }
+                        ?: "Xray · ${endpoint.displayProtocol}",
                     activeProtocol = endpoint.displayProtocol,
-                    pingMs = handshake.latencyMs,
+                    pingMs = handshake?.latencyMs ?: 0,
                     remoteHost = if (request.whiteLabel) {
                         request.serverName
                     } else {
@@ -246,7 +294,15 @@ class MeelanoVpnService : VpnService() {
                 log("Tunnel established. Routing mode: ${request.routingMode.title}")
                 notifyStatus("اتصال امن برقرار است", request.serverName)
 
-                runPacketLoop(descriptor, request)
+                if (useXray) {
+                    // The core owns the descriptor and pumps packets itself, so
+                    // there is no userspace loop to run — just stay alive until
+                    // the service is torn down.
+                    log("Tunnel handed to the Xray core.")
+                    awaitCancellation()
+                } else {
+                    runPacketLoop(descriptor, request)
+                }
             } catch (e: Exception) {
                 fail("خطای تونل: ${e.message}")
             }
@@ -453,6 +509,10 @@ class MeelanoVpnService : VpnService() {
     }
 
     private fun teardown(notifyState: Boolean) {
+        // Stop the core first: it holds the TUN descriptor, and closing that
+        // out from under it would leave the Go side writing to a dead fd.
+        XrayCore.stop()
+
         healthMonitor?.stop()
         healthMonitor = null
         statsJob?.cancel()

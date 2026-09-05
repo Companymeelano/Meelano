@@ -21,7 +21,12 @@ object OutboundFactory {
         if (!protocolOk) return false
         if (endpoint.network !in SUPPORTED_NETWORKS) return false
 
-        // VLESS Reality cannot be faked.
+        // Reality is impossible for THIS engine, but not for the app: when the
+        // Xray core is bundled it handles Reality natively, so callers must ask
+        // XrayConfigBuilder.isSupported first. What follows only decides whether
+        // the hand-written Kotlin outbounds can carry the node.
+        //
+        // VLESS Reality cannot be faked here.
         //
         // Reality is not "TLS with a borrowed certificate": the client must
         // perform an X25519 key exchange against the server's public key and

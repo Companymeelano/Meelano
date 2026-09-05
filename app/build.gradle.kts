@@ -9,6 +9,20 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+/**
+ * The Xray core ships as a prebuilt AAR that CI downloads into app/libs.
+ *
+ * It is deliberately not committed (59 MB), so guard against its absence: a
+ * missing AAR must produce one clear message rather than a wall of unresolved
+ * references, and BuildConfig.HAS_XRAY lets the app fall back to the built-in
+ * Kotlin engine instead of crashing.
+ */
+val xrayAar = file("libs/libv2ray.aar")
+val hasXray = xrayAar.exists()
+if (!hasXray) {
+    logger.lifecycle("libv2ray.aar not found — building without the Xray core.")
+}
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -21,6 +35,9 @@ android {
     versionName = "11.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // Lets the runtime pick the Xray core only when it was actually bundled.
+    buildConfigField("boolean", "HAS_XRAY", hasXray.toString())
   }
 
   // Release signing is only wired up when a keystore is actually available
@@ -85,6 +102,7 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 // Some unused dependencies are commented out below instead of being removed.
 // This makes it easy to add them back in the future if needed.
 dependencies {
+  if (hasXray) implementation(files("libs/libv2ray.aar"))
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)
