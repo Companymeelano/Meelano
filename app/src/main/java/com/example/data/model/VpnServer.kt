@@ -20,11 +20,23 @@ data class VpnServer(
     val tunnelIp: String = "172.19.0.1",
     val encryption: String = "TLS 1.3 / AES-256",
     val packetLossPercent: Int = 0,
-    val lastTestedAt: Long = 0L
+    val lastTestedAt: Long = 0L,
+    /**
+     * Whether this node has completed a real protocol handshake, as opposed to
+     * merely accepting a TCP connection.
+     *
+     * A dead node often still answers on its port, so [isReachable] alone is not
+     * evidence that the tunnel will work. Keeping the two apart lets the list
+     * show a green tick only where it has been earned.
+     */
+    val isVerified: Boolean = false
 ) {
     val endpoint get() = ConfigParser.parse(configLink)
     val isReachable: Boolean get() = pingMs > 0
     val isUntested: Boolean get() = pingMs == 0 || lastTestedAt == 0L
+
+    /** Port answered but the tunnel has never been proven to carry traffic. */
+    val isUnproven: Boolean get() = isReachable && !isVerified && lastTestedAt > 0L
     /**
      * What the UI is allowed to show about this node's address.
      *

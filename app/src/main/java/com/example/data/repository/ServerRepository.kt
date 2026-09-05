@@ -186,13 +186,42 @@ class ServerRepository(
                 _updateProgress.value = UpdateProgress("در حال تست پینگ…", done, total)
             }
         )
+        // A TCP ping only proves a port answers. Nodes that pass it then get a
+        // real handshake, so the list can distinguish "reachable" from "works" —
+        // without that split, a dead server shows a healthy green ping and the
+        // user cannot tell why connecting fails.
+        val reachableNow = list.filter {
+            (results[it.id] ?: PingTester.UNREACHABLE) > 0
+        }
+        _updateProgress.value =
+            UpdateProgress("اعتبارسنجی ${reachableNow.size} نود…", 0, reachableNow.size)
+
+        val verifiedIds = mutableSetOf<String>()
+        val pairs = reachableNow.mapNotNull { server -> server.endpoint?.let { it to server } }
+        if (pairs.isNotEmpty()) {
+            val proven = NodeValidator.validateAll(
+                endpoints = pairs.map { it.first },
+                parallelism = 10,
+                probeTimeoutMs = 5_000,
+                onProgress = { done, total ->
+                    _updateProgress.value = UpdateProgress("اعتبارسنجی نودها…", done, total)
+                }
+            )
+            proven.forEach { result ->
+                pairs.firstOrNull { it.first === result.endpoint }
+                    ?.second?.id
+                    ?.let(verifiedIds::add)
+            }
+        }
+
         val now = System.currentTimeMillis()
         val updated = list.map { server ->
             val latency = results[server.id] ?: PingTester.UNREACHABLE
             server.copy(
                 pingMs = latency,
                 lastTestedAt = now,
-                speedMbps = estimateThroughput(latency)
+                speedMbps = estimateThroughput(latency),
+                isVerified = server.id in verifiedIds
             )
         }
         setList(scope, updated)
@@ -659,6 +688,7 @@ class ServerRepository(
                     put("speed", server.speedMbps.toDouble())
                     put("link", server.configLink)
                     put("testedAt", server.lastTestedAt)
+                    put("verified", server.isVerified)
                 }
             )
         }
@@ -681,7 +711,8 @@ class ServerRepository(
                     pingMs = obj.optInt("ping", 0),
                     speedMbps = obj.optDouble("speed", 0.0).toFloat(),
                     configLink = obj.getString("link"),
-                    lastTestedAt = obj.optLong("testedAt", 0L)
+                    lastTestedAt = obj.optLong("testedAt", 0L),
+                    isVerified = obj.optBoolean("verified", false)
                 )
             }
         }.getOrDefault(emptyList())

@@ -70,6 +70,7 @@ import com.example.ui.components.SignalBars
 import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoBgDark
 import com.example.ui.theme.MeelanoGoldVip
+import com.example.ui.theme.MeelanoAmber
 import com.example.ui.theme.MeelanoGreenSuccess
 import com.example.ui.theme.MeelanoRedKillSwitch
 import com.example.ui.theme.TextMuted
@@ -423,6 +424,26 @@ private fun ServerRow(
                     )
                     Spacer(Modifier.height(3.dp))
                     SignalBars(server.pingMs, barHeight = 11)
+
+                    // Distinguish "the port answered" from "the tunnel works".
+                    // Without this a dead node shows a healthy latency and the
+                    // user has no way to know why it will not connect.
+                    if (server.isVerified) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            "✓ تأیید شد",
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MeelanoGreenSuccess
+                        )
+                    } else if (server.isUnproven) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            "تأیید نشده",
+                            fontSize = 7.sp,
+                            color = MeelanoAmber
+                        )
+                    }
                 }
             }
 

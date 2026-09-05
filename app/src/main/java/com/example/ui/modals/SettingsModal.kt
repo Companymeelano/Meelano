@@ -344,7 +344,7 @@ fun SettingsModal(
 
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    "MeeLano Tunnel · نسخه ۱۰٫۰ · MEELANO STUDIO DESIGN",
+                    "MeeLano Tunnel · نسخه ۱۱٫۰ · MEELANO STUDIO DESIGN",
                     fontSize = 9.sp,
                     color = TextMuted,
                     modifier = Modifier.fillMaxWidth(),
