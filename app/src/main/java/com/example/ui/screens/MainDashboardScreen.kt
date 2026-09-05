@@ -86,6 +86,7 @@ import com.example.ui.components.MeelanoHexagonLogo
 import com.example.ui.components.Pill
 import com.example.ui.components.ConnectOrb
 import com.example.ui.components.GlowDot
+import com.example.ui.components.ServerPortalButton
 import com.example.ui.components.ServerScanOverlay
 import com.example.ui.components.SectionHeader
 import com.example.ui.theme.Spacing
@@ -132,6 +133,10 @@ fun MainDashboardScreen(
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val liveStats by viewModel.liveStats.collectAsStateWithLifecycle()
     val activeServer by viewModel.activeServer.collectAsStateWithLifecycle()
+    val vipServerList by viewModel.vipServers.collectAsStateWithLifecycle()
+    val freeServerList by viewModel.freeServers.collectAsStateWithLifecycle()
+    val customServerList by viewModel.customServers.collectAsStateWithLifecycle()
+    val totalServerCount = vipServerList.size + freeServerList.size + customServerList.size
     val routingMode by viewModel.routingMode.collectAsStateWithLifecycle()
     val killSwitchEnabled by viewModel.killSwitchEnabled.collectAsStateWithLifecycle()
     val dashboardTab by viewModel.dashboardTab.collectAsStateWithLifecycle()
@@ -230,6 +235,22 @@ fun MainDashboardScreen(
                     onClick = {
                         if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.requestToggle(context, onRequestVpnPermission)
+                    }
+                )
+
+                Spacer(Modifier.height(Spacing.Large))
+
+                // The route to the server list, given real presence directly
+                // under the connect control where users look for it.
+                ServerPortalButton(
+                    serverName = activeServer.name,
+                    serverCount = totalServerCount,
+                    pingMs = activeServer.pingMs,
+                    accent = accent,
+                    secondary = secondary,
+                    onClick = {
+                        if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.openServersModal()
                     }
                 )
 

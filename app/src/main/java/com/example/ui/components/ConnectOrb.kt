@@ -78,6 +78,9 @@ fun ConnectOrb(
         else -> Color(0xFF7C8BA8)
     }
 
+    // Rings alternate between the two accent tones for depth separation.
+    val secondaryTone = if (connected) secondary else stateColor
+
     val transition = rememberInfiniteTransition(label = "orb")
 
     // Continuous rotation drives the ring and the particles.
@@ -217,27 +220,98 @@ fun ConnectOrb(
                     )
                 }
 
-                // ---- 5. orbiting particles ----
-                if (connected || busy) {
-                    val count = 7
-                    repeat(count) { i ->
-                        val angle = Math.toRadians(
-                            (spin * (if (i % 2 == 0) 1f else -1.4f) + i * (360f / count)).toDouble()
-                        ).toFloat()
-                        val orbit = base * (0.60f + 0.10f * sin(spin / 40f + i)) * scale
-                        val position = Offset(
-                            centre.x + orbit * cos(angle),
-                            centre.y + orbit * sin(angle)
+                // ---- 5. three-dimensional orbital gyroscope ----
+                //
+                // Three rings inclined on different axes, each a real circle in
+                // 3-D space that is rotated and perspective-projected. Points
+                // swinging toward the viewer grow and brighten; those passing
+                // behind the shield shrink, dim and are drawn first so the
+                // shield genuinely occludes them. That front-to-back ordering is
+                // what makes this read as a solid object rather than a drawing.
+                val orbitScale = base * 0.74f * scale
+                val rings = listOf(
+                    Triple(0.00f, 0.62f, 1.00f),
+                    Triple(1.15f, 0.48f, -0.75f),
+                    Triple(2.30f, 0.70f, 0.55f)
+                )
+
+                rings.forEachIndexed { ringIndex, (tiltAxis, inclination, speed) ->
+                    val samples = 72
+                    val points = ArrayList<Triple<Offset, Float, Float>>(samples)
+                    val phase = Math.toRadians((spin * speed).toDouble()).toFloat()
+
+                    for (i in 0 until samples) {
+                        val t = (i.toFloat() / samples) * 2f * Math.PI.toFloat()
+                        // A unit circle in the XY plane...
+                        var px = cos(t)
+                        var py = sin(t)
+                        var pz = 0f
+
+                        // ...inclined about X to give it a tilt...
+                        val ci = cos(inclination)
+                        val si = sin(inclination)
+                        val y1 = py * ci - pz * si
+                        val z1 = py * si + pz * ci
+                        py = y1
+                        pz = z1
+
+                        // ...rotated about Z so each ring sits on its own axis...
+                        val ca = cos(tiltAxis)
+                        val sa = sin(tiltAxis)
+                        val x2 = px * ca - py * sa
+                        val y2 = px * sa + py * ca
+                        px = x2
+                        py = y2
+
+                        // ...and finally spun about Y over time.
+                        val cp = cos(phase)
+                        val sp = sin(phase)
+                        val x3 = px * cp - pz * sp
+                        val z3 = px * sp + pz * cp
+
+                        // Perspective divide: nearer points spread out and grow.
+                        val depth = (z3 + 1f) / 2f
+                        val perspective = 2.4f / (2.4f - z3)
+                        points.add(
+                            Triple(
+                                Offset(
+                                    centre.x + x3 * orbitScale * perspective,
+                                    centre.y + py * orbitScale * perspective
+                                ),
+                                depth,
+                                perspective
+                            )
                         )
-                        // Halo then core, so each particle reads as a light source.
+                    }
+
+                    // Painter's algorithm along the ring.
+                    val ordered = points.sortedBy { it.second }
+                    ordered.forEach { (position, depth, perspective) ->
+                        val tone = if (ringIndex == 1) secondaryTone else stateColor
+                        val alpha = (0.06f + 0.55f * depth * depth) * (0.35f + 0.65f * glow)
                         drawCircle(
-                            color = stateColor.copy(alpha = 0.20f * glow),
-                            radius = 7f,
+                            color = tone.copy(alpha = alpha),
+                            radius = (0.7f + 1.9f * depth) * perspective,
+                            center = position
+                        )
+                    }
+
+                    // A travelling light bead per ring, so motion is legible even
+                    // when the app is idle and the rings are dim.
+                    if (connected || busy) {
+                        val head = points[
+                            ((spin * speed / 360f * samples).toInt().mod(samples))
+                        ]
+                        val (position, depth, perspective) = head
+                        val tone = if (ringIndex == 1) secondaryTone else stateColor
+                        drawCircle(
+                            color = tone.copy(alpha = 0.28f * glow * depth),
+                            radius = 9f * perspective,
                             center = position
                         )
                         drawCircle(
-                            color = Color.White.copy(alpha = 0.85f * glow),
-                            radius = 2.2f,
+                            color = Color.White.copy(alpha = (0.35f + 0.6f * depth) * glow),
+                            radius = 2.6f * perspective,
                             center = position
                         )
                     }

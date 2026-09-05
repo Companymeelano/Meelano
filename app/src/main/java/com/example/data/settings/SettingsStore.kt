@@ -73,7 +73,20 @@ class SettingsStore(private val context: Context) {
     val selectedServerId: Flow<String> = string(Keys.SELECTED_SERVER, "")
     val bypassPackages: Flow<Set<String>> = stringSet(Keys.BYPASS_PACKAGES, defaultBypassPackages)
     val favorites: Flow<Set<String>> = stringSet(Keys.FAVORITES, emptySet())
+    /**
+     * Subscription sources, with the dead jsDelivr mirrors filtered out.
+     *
+     * Earlier builds persisted cdn.jsdelivr.net URLs, which turned out to be
+     * unreachable from most Iranian networks. Those values are already saved on
+     * upgrading devices, so simply changing the defaults would not help anyone
+     * who had run a previous version — the stored set wins over the default.
+     * Drop them on read and top the set back up if nothing usable remains.
+     */
     val subscriptions: Flow<Set<String>> = stringSet(Keys.SUBSCRIPTIONS, defaultSubscriptions)
+        .map { stored ->
+            val usable = stored.filterNot { it.contains("jsdelivr.net") }.toSet()
+            if (usable.isEmpty()) defaultSubscriptions else usable
+        }
     val customServers: Flow<String> = string(Keys.CUSTOM_SERVERS, "")
     val cachedFreeServers: Flow<String> = string(Keys.CACHED_FREE, "")
 
@@ -135,19 +148,21 @@ class SettingsStore(private val context: Context) {
          * from Iran more often than raw.githubusercontent.com.
          */
         val defaultSubscriptions = setOf(
-            // Curated, protocol-split feeds — the highest hit-rate sources.
-            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/vless.txt",
-            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/vmess.txt",
-            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/trojan.txt",
-            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/ss.txt",
-            // Reality-capable and TLS-fronted nodes.
-            "https://cdn.jsdelivr.net/gh/Epodonios/v2ray-configs@main/Splitted-By-Protocol/vless.txt",
-            "https://cdn.jsdelivr.net/gh/Epodonios/v2ray-configs@main/Splitted-By-Protocol/trojan.txt",
+            // ebrasha/free-v2ray-public-list — refreshed several times a day and
+            // published already split by protocol, so we fetch the individual
+            // feeds rather than the 8 MB combined dump.
+            "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/vless_configs.txt",
+            "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/vmess_configs.txt",
+            "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/trojan_configs.txt",
+            "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/ss_configs.txt",
+            // Curated protocol-split feeds from other maintained aggregators.
+            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vless.txt",
+            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vmess.txt",
+            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/trojan.txt",
+            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/ss.txt",
             // Broad aggregators, kept last so curated nodes rank first.
-            "https://cdn.jsdelivr.net/gh/mahdibland/V2RayAggregator@master/sub/sub_merge.txt",
-            "https://cdn.jsdelivr.net/gh/yebekhe/TVC@main/subscriptions/xray/normal/mix",
-            "https://cdn.jsdelivr.net/gh/mfuu/v2ray@master/v2ray",
-            "https://cdn.jsdelivr.net/gh/ALIILAPRO/v2rayNG-Config@main/server.txt"
+            "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt",
+            "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/mix"
         )
     }
 }

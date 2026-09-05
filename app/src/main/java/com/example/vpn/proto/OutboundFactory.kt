@@ -20,6 +20,21 @@ object OutboundFactory {
         }
         if (!protocolOk) return false
         if (endpoint.network !in SUPPORTED_NETWORKS) return false
+
+        // VLESS Reality cannot be faked.
+        //
+        // Reality is not "TLS with a borrowed certificate": the client must
+        // perform an X25519 key exchange against the server's public key and
+        // embed an authentication tag in the ClientHello. A server configured
+        // for Reality inspects that tag and, when it is absent, silently
+        // forwards the connection to the real site it is masquerading as.
+        //
+        // The result is the worst possible failure mode: the TCP connect
+        // succeeds, the TLS handshake succeeds against the fronted site's real
+        // certificate, so a ping test goes green — and then not one byte of
+        // proxied traffic is ever carried. Declaring these unsupported is the
+        // honest answer until an X25519 Reality handshake is implemented.
+        if (endpoint.security == "reality") return false
         // Shadowsocks nodes are only usable if we implement their cipher.
         if (endpoint.protocol == Protocol.SHADOWSOCKS &&
             !ShadowsocksOutbound.supportsMethod(endpoint.method)
@@ -30,6 +45,9 @@ object OutboundFactory {
     }
 
     fun unsupportedReason(endpoint: ProxyEndpoint): String = when {
+        endpoint.security == "reality" ->
+            "VLESS Reality نیازمند تبادل کلید X25519 است و هنوز پشتیبانی نمی‌شود"
+
         endpoint.protocol == Protocol.HYSTERIA2 ->
             "Hysteria 2 به پشتهٔ QUIC نیاز دارد و در این نسخه پشتیبانی نمی‌شود"
         endpoint.protocol == Protocol.UNKNOWN -> "پروتکل ناشناخته است"

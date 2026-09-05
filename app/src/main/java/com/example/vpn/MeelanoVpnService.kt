@@ -99,6 +99,12 @@ class MeelanoVpnService : VpnService() {
     private var udpNat: UdpNat? = null
     private var stack: TcpStack? = null
     private var healthMonitor: HealthMonitor? = null
+
+    /**
+     * Set when the user explicitly disconnects, so the system does not resurrect
+     * the service behind their back.
+     */
+    private var userRequestedStop = false
     private var activeEndpoint: ProxyEndpoint? = null
     private var counter: TrafficCounter? = null
     private var sessionStartedAt = 0L
@@ -128,13 +134,34 @@ class MeelanoVpnService : VpnService() {
                     dnsSecondary = intent.getStringExtra(EXTRA_DNS_SECONDARY) ?: "8.8.8.8",
                     ipv6Enabled = intent.getBooleanExtra(EXTRA_IPV6, false)
                 )
+                userRequestedStop = false
                 connect(request)
             }
 
-            ACTION_DISCONNECT -> disconnect()
+            ACTION_DISCONNECT -> {
+                userRequestedStop = true
+                disconnect()
+            }
         }
-        return START_STICKY
+
+        // Auto-restart policy.
+        //
+        // START_STICKY tells Android to recreate the service after it is killed,
+        // which is right while a tunnel is meant to be up but wrong after the
+        // user deliberately disconnected — that produced a VPN which switched
+        // itself back on. A null intent means exactly that redelivery case, so
+        // after an explicit stop we refuse to stay resident.
+        return if (userRequestedStop || intent == null && !isTunnelDesired()) {
+            START_NOT_STICKY
+        } else {
+            START_STICKY
+        }
     }
+
+    /** True while a tunnel is supposed to be running. */
+    private fun isTunnelDesired(): Boolean =
+        _connectionState.value == VpnConnectionState.CONNECTED ||
+            _connectionState.value.isBusy
 
     private data class ConnectRequest(
         val serverName: String,
@@ -446,6 +473,9 @@ class MeelanoVpnService : VpnService() {
 
     override fun onRevoke() {
         log("VPN permission revoked by the system or another VPN app.")
+        // Revocation is involuntary but final: do not let the service be
+        // restarted into a state it no longer has permission for.
+        userRequestedStop = true
         disconnect()
         super.onRevoke()
     }
