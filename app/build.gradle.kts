@@ -31,8 +31,8 @@ android {
     applicationId = "com.aistudio.meelanotunnel.qkrv"
     minSdk = 24
     targetSdk = 36
-    versionCode = 15
-    versionName = "15.0"
+    versionCode = 16
+    versionName = "16.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
