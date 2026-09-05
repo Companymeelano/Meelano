@@ -1,56 +1,68 @@
 package com.example.ui.viewmodel
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.net.VpnService
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.CoreProtocolFilter
 import com.example.data.model.NetworkLiveStats
 import com.example.data.model.RoutingMode
+import com.example.data.model.ServerSort
 import com.example.data.model.VpnServer
 import com.example.data.repository.ServerRepository
 import com.example.data.security.SecurityManager
+import com.example.data.settings.SettingsStore
 import com.example.util.SmartImportHelper
 import com.example.vpn.MeelanoVpnService
 import com.example.vpn.VpnConnectionState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class MainViewModel(
     private val repository: ServerRepository,
+    private val settings: SettingsStore,
     val securityManager: SecurityManager
 ) : ViewModel() {
 
+    // ---- tunnel state ----
     val connectionState: StateFlow<VpnConnectionState> = MeelanoVpnService.connectionState
     val liveStats: StateFlow<NetworkLiveStats> = MeelanoVpnService.liveStats
     val logs: StateFlow<List<String>> = MeelanoVpnService.logs
+    val lastError: StateFlow<String?> = MeelanoVpnService.lastError
 
+    // ---- servers ----
     val activeServer: StateFlow<VpnServer> = repository.activeServer
     val vipServers: StateFlow<List<VpnServer>> = repository.vipServers
     val freeServers: StateFlow<List<VpnServer>> = repository.freeServers
+    val customServers: StateFlow<List<VpnServer>> = repository.customServers
     val bypassApps = repository.bypassApps
+    val updateProgress = repository.updateProgress
 
-    // Routing & Protocol configuration
-    private val _routingMode = MutableStateFlow(RoutingMode.SMART_BYPASS)
-    val routingMode: StateFlow<RoutingMode> = _routingMode.asStateFlow()
+    // ---- persisted settings ----
+    val routingMode = state(settings.routingMode, RoutingMode.SMART_BYPASS)
+    val coreProtocolFilter = state(settings.protocolFilter, CoreProtocolFilter.ALL)
+    val serverSort = state(settings.serverSort, ServerSort.PING)
+    val killSwitchEnabled = state(settings.killSwitch, true)
+    val smartFailoverEnabled = state(settings.smartFailover, true)
+    val autoConnectEnabled = state(settings.autoConnect, false)
+    val ipv6Enabled = state(settings.ipv6Enabled, false)
+    val isSoundMuted = state(settings.soundMuted, false)
+    val hapticsEnabled = state(settings.hapticsEnabled, true)
+    val biometricEnabled = state(settings.biometricEnabled, true)
+    val lockOnStart = state(settings.lockOnStart, false)
+    val dnsPrimary = state(settings.dnsPrimary, "1.1.1.1")
+    val dnsSecondary = state(settings.dnsSecondary, "8.8.8.8")
+    val subscriptions = state(settings.subscriptions, emptySet<String>())
+    val themeAccent = state(settings.themeAccent, "cyan")
 
-    private val _coreProtocolFilter = MutableStateFlow(CoreProtocolFilter.ALL)
-    val coreProtocolFilter: StateFlow<CoreProtocolFilter> = _coreProtocolFilter.asStateFlow()
-
-    private val _killSwitchEnabled = MutableStateFlow(true)
-    val killSwitchEnabled: StateFlow<Boolean> = _killSwitchEnabled.asStateFlow()
-
-    private val _smartFailoverEnabled = MutableStateFlow(true)
-    val smartFailoverEnabled: StateFlow<Boolean> = _smartFailoverEnabled.asStateFlow()
-
-    // Dashboard navigation & modals
-    // 0: Network Status (وضعیت شبکه), 1: Security Tools (ابزارهای امنیتی), 2: Traffic Chart (نمودار ترافیک)
+    // ---- UI state ----
     private val _dashboardTab = MutableStateFlow(0)
     val dashboardTab: StateFlow<Int> = _dashboardTab.asStateFlow()
 
@@ -66,14 +78,14 @@ class MainViewModel(
     private val _isSplitTunnelingOpen = MutableStateFlow(false)
     val isSplitTunnelingOpen: StateFlow<Boolean> = _isSplitTunnelingOpen.asStateFlow()
 
+    private val _isImportOpen = MutableStateFlow(false)
+    val isImportOpen: StateFlow<Boolean> = _isImportOpen.asStateFlow()
+
     private val _selectedServerForQr = MutableStateFlow<VpnServer?>(null)
     val selectedServerForQr: StateFlow<VpnServer?> = _selectedServerForQr.asStateFlow()
 
     private val _smartImportFallbackOpen = MutableStateFlow(false)
     val smartImportFallbackOpen: StateFlow<Boolean> = _smartImportFallbackOpen.asStateFlow()
-
-    private val _isSoundMuted = MutableStateFlow(false)
-    val isSoundMuted: StateFlow<Boolean> = _isSoundMuted.asStateFlow()
 
     private val _isUpdatingGitHub = MutableStateFlow(false)
     val isUpdatingGitHub: StateFlow<Boolean> = _isUpdatingGitHub.asStateFlow()
@@ -84,172 +96,282 @@ class MainViewModel(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
+    private val _toast = MutableStateFlow<String?>(null)
+    val toast: StateFlow<String?> = _toast.asStateFlow()
+
+    /** Set when the user asked to connect but the OS still needs to grant VPN consent. */
+    private val _pendingConnect = MutableStateFlow(false)
+    val pendingConnect: StateFlow<Boolean> = _pendingConnect.asStateFlow()
+
     init {
-        // Smart Failover watcher: if connected server drops or is slow, automatically switch
+        viewModelScope.launch {
+            repository.restore()
+            if (settings.lockOnStart.first()) securityManager.lock()
+            if (freeServers.value.isEmpty()) refreshSubscriptions(silent = true)
+        }
+        watchForDrops()
+    }
+
+    // region connection
+
+    fun requestToggle(context: Context, onNeedsPermission: () -> Unit) {
+        val state = connectionState.value
+        if (state == VpnConnectionState.CONNECTED || state.isBusy) {
+            stopVpn(context)
+            return
+        }
+        val consent = android.net.VpnService.prepare(context)
+        if (consent != null) {
+            _pendingConnect.value = true
+            onNeedsPermission()
+        } else {
+            startVpn(context)
+        }
+    }
+
+    fun onPermissionResult(context: Context, granted: Boolean) {
+        val wasPending = _pendingConnect.value
+        _pendingConnect.value = false
+        if (granted && wasPending) startVpn(context)
+        else if (!granted) _toast.value = "بدون مجوز VPN امکان برقراری تونل وجود ندارد"
+    }
+
+    fun startVpn(context: Context) {
+        viewModelScope.launch {
+            val server = activeServer.value
+            val bypass = ArrayList(bypassApps.value.filter { it.isBypassed }.map { it.packageName })
+            val intent = Intent(context, MeelanoVpnService::class.java).apply {
+                action = MeelanoVpnService.ACTION_CONNECT
+                putExtra(MeelanoVpnService.EXTRA_SERVER_NAME, server.name)
+                putExtra(MeelanoVpnService.EXTRA_PROTOCOL, server.protocol)
+                putExtra(MeelanoVpnService.EXTRA_CONFIG_LINK, server.configLink)
+                putStringArrayListExtra(MeelanoVpnService.EXTRA_BYPASS_PACKAGES, bypass)
+                putExtra(MeelanoVpnService.EXTRA_KILL_SWITCH, killSwitchEnabled.value)
+                putExtra(MeelanoVpnService.EXTRA_ROUTING_MODE, routingMode.value.name)
+                putExtra(MeelanoVpnService.EXTRA_DNS_PRIMARY, dnsPrimary.value)
+                putExtra(MeelanoVpnService.EXTRA_DNS_SECONDARY, dnsSecondary.value)
+                putExtra(MeelanoVpnService.EXTRA_IPV6, ipv6Enabled.value)
+            }
+            androidx.core.content.ContextCompat.startForegroundService(context, intent)
+        }
+    }
+
+    fun stopVpn(context: Context) {
+        context.startService(
+            Intent(context, MeelanoVpnService::class.java).apply {
+                action = MeelanoVpnService.ACTION_DISCONNECT
+            }
+        )
+    }
+
+    /** Smart failover: if the tunnel fails while enabled, switch to the fastest live node. */
+    private fun watchForDrops() {
         viewModelScope.launch {
             connectionState.collect { state ->
-                if (state == VpnConnectionState.DISCONNECTED && _smartFailoverEnabled.value) {
-                    // Monitor for unexpected drop
+                if (state == VpnConnectionState.FAILED && smartFailoverEnabled.value) {
+                    MeelanoVpnService.log("Smart Failover: searching for a healthy node…")
+                    val fastest = repository.fastestServer()
+                    if (fastest != null && fastest.id != activeServer.value.id) {
+                        repository.selectServer(fastest)
+                        _toast.value = "سرور به ${fastest.name} تغییر کرد (Failover)"
+                        MeelanoVpnService.log("Smart Failover → ${fastest.name} (${fastest.pingMs}ms)")
+                    } else {
+                        MeelanoVpnService.log("Smart Failover: no healthy node available")
+                    }
                 }
             }
         }
     }
 
-    fun setDashboardTab(tabIndex: Int) {
-        _dashboardTab.value = tabIndex
-    }
-
-    fun openServersModal() {
-        _isServersModalOpen.value = true
-    }
-
-    fun closeServersModal() {
-        _isServersModalOpen.value = false
-    }
-
-    fun openSettingsModal() {
-        _isSettingsModalOpen.value = true
-    }
-
-    fun closeSettingsModal() {
-        _isSettingsModalOpen.value = false
-    }
-
-    fun openLogsConsole() {
-        _isLogsConsoleOpen.value = true
-    }
-
-    fun closeLogsConsole() {
-        _isLogsConsoleOpen.value = false
-    }
-
-    fun openSplitTunneling() {
-        _isSplitTunnelingOpen.value = true
-    }
-
-    fun closeSplitTunneling() {
-        _isSplitTunnelingOpen.value = false
-    }
-
-    fun showQrCode(server: VpnServer) {
-        _selectedServerForQr.value = server
-    }
-
-    fun closeQrCode() {
-        _selectedServerForQr.value = null
-    }
-
-    fun closeSmartImportFallback() {
-        _smartImportFallbackOpen.value = false
-    }
-
-    fun toggleSoundMute() {
-        _isSoundMuted.value = !_isSoundMuted.value
-    }
-
-    fun setRoutingMode(mode: RoutingMode) {
-        _routingMode.value = mode
-        MeelanoVpnService.log("Routing mode changed: ${mode.title}")
-    }
-
-    fun setCoreProtocolFilter(filter: CoreProtocolFilter) {
-        _coreProtocolFilter.value = filter
-    }
-
-    fun toggleKillSwitch() {
-        _killSwitchEnabled.value = !_killSwitchEnabled.value
-        MeelanoVpnService.log("Kill Switch toggled: ${_killSwitchEnabled.value}")
-    }
-
-    fun toggleSmartFailover() {
-        _smartFailoverEnabled.value = !_smartFailoverEnabled.value
-        MeelanoVpnService.log("Smart Failover toggled: ${_smartFailoverEnabled.value}")
-    }
-
-    fun setSearchQuery(query: String) {
-        _searchQuery.value = query
-    }
-
-    fun selectServer(server: VpnServer, context: Context) {
-        repository.selectServer(server)
-        MeelanoVpnService.log("Selected server: ${server.name} (${server.countryName})")
-        if (connectionState.value == VpnConnectionState.CONNECTED) {
-            // Hot reconnect to new server
-            startVpn(context)
-        }
-    }
-
-    fun toggleConnect(context: Context) {
-        if (connectionState.value == VpnConnectionState.CONNECTED ||
-            connectionState.value == VpnConnectionState.CONNECTING
-        ) {
-            stopVpn(context)
-        } else {
-            startVpn(context)
-        }
-    }
-
-    fun startVpn(context: Context) {
-        val server = activeServer.value
-        val bypassedList = ArrayList(bypassApps.value.filter { it.isBypassed }.map { it.packageName })
-
-        val intent = Intent(context, MeelanoVpnService::class.java).apply {
-            action = MeelanoVpnService.ACTION_CONNECT
-            putExtra(MeelanoVpnService.EXTRA_SERVER_NAME, server.name)
-            putExtra(MeelanoVpnService.EXTRA_PROTOCOL, server.protocol)
-            putStringArrayListExtra(MeelanoVpnService.EXTRA_BYPASS_PACKAGES, bypassedList)
-            putExtra(MeelanoVpnService.EXTRA_KILL_SWITCH, _killSwitchEnabled.value)
-        }
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
-        }
-    }
-
-    fun stopVpn(context: Context) {
-        val intent = Intent(context, MeelanoVpnService::class.java).apply {
-            action = MeelanoVpnService.ACTION_DISCONNECT
-        }
-        context.startService(intent)
-    }
-
-    fun testPings(isVip: Boolean) {
+    fun connectToFastest(context: Context, onNeedsPermission: () -> Unit) {
         viewModelScope.launch {
             _isTestingPing.value = true
-            MeelanoVpnService.log("Testing ping for ${if (isVip) "VIP" else "Free"} servers...")
-            repository.testAllPings(isVip)
+            val fastest = repository.fastestServer()
             _isTestingPing.value = false
-            MeelanoVpnService.log("Ping test completed.")
+            if (fastest == null) {
+                _toast.value = "هیچ سرور در دسترسی پیدا نشد"
+                return@launch
+            }
+            repository.selectServer(fastest)
+            _toast.value = "سریع‌ترین سرور: ${fastest.name} · ${fastest.pingMs}ms"
+            requestToggle(context, onNeedsPermission)
         }
     }
 
-    fun sortByPing(isVip: Boolean) {
-        repository.sortByLowestPing(isVip)
+    // endregion
+
+    // region servers
+
+    fun selectServer(server: VpnServer, context: Context) {
+        viewModelScope.launch {
+            repository.selectServer(server)
+            MeelanoVpnService.log("Selected ${server.name} · ${server.hostLabel}")
+            if (connectionState.value == VpnConnectionState.CONNECTED) startVpn(context)
+        }
     }
 
-    fun updateGitHubFreeServers() {
+    fun toggleFavorite(server: VpnServer) {
+        viewModelScope.launch { repository.toggleFavorite(server) }
+    }
+
+    fun deleteCustomServer(server: VpnServer) {
+        viewModelScope.launch {
+            repository.deleteCustomServer(server)
+            _toast.value = "سرور حذف شد"
+        }
+    }
+
+    fun testPings(scope: ServerRepository.ServerScope) {
+        viewModelScope.launch {
+            _isTestingPing.value = true
+            MeelanoVpnService.log("Ping test started (${scope.name})")
+            repository.testPings(scope)
+            _isTestingPing.value = false
+            MeelanoVpnService.log("Ping test finished")
+        }
+    }
+
+    fun setSort(sort: ServerSort) {
+        viewModelScope.launch { settings.setServerSort(sort) }
+    }
+
+    fun sortedServers(list: List<VpnServer>): List<VpnServer> {
+        val filtered = list
+            .filter { server ->
+                val query = _searchQuery.value.trim()
+                query.isEmpty() ||
+                    server.name.contains(query, true) ||
+                    server.countryName.contains(query, true) ||
+                    server.protocol.contains(query, true)
+            }
+            .filter { server ->
+                coreProtocolFilter.value == CoreProtocolFilter.ALL ||
+                    server.protocol.equals(coreProtocolFilter.value.label, ignoreCase = true)
+            }
+        return repository.sorted(filtered, serverSort.value)
+    }
+
+    fun refreshSubscriptions(silent: Boolean = false) {
         viewModelScope.launch {
             _isUpdatingGitHub.value = true
-            MeelanoVpnService.log("Fetching latest Iran-optimized nodes from GitHub with Smart Bypass...")
-            val result = repository.updateFreeServersFromGitHub()
-            result.onSuccess { top10 ->
-                MeelanoVpnService.log("Updated successfully! Filtered top 10 lowest ping nodes.")
-            }.onFailure { err ->
-                MeelanoVpnService.log("Update error: ${err.message}. Maintained cached high-speed nodes.")
-            }
+            if (!silent) MeelanoVpnService.log("Fetching subscriptions…")
+            repository.refreshFreeServers()
+                .onSuccess { list ->
+                    MeelanoVpnService.log("Subscriptions updated: ${list.size} live nodes")
+                    if (!silent) _toast.value = "${list.size} سرور فعال دریافت شد"
+                }
+                .onFailure { error ->
+                    MeelanoVpnService.log("Subscription update failed: ${error.message}")
+                    if (!silent) _toast.value = error.message ?: "به‌روزرسانی ناموفق بود"
+                }
             _isUpdatingGitHub.value = false
         }
     }
 
+    fun importConfigs(payload: String) {
+        viewModelScope.launch {
+            val count = repository.importConfigs(payload)
+            _toast.value = if (count > 0) "$count کانفیگ وارد شد" else "هیچ کانفیگ معتبری پیدا نشد"
+            if (count > 0) _isImportOpen.value = false
+        }
+    }
+
+    fun importFromClipboard(context: Context) = importConfigs(SmartImportHelper.readClipboard(context))
+
+    fun addSubscription(url: String) {
+        viewModelScope.launch {
+            if (repository.addSubscription(url.trim())) {
+                _toast.value = "لینک اشتراک اضافه شد"
+                refreshSubscriptions()
+            } else {
+                _toast.value = "آدرس اشتراک نامعتبر است"
+            }
+        }
+    }
+
+    fun removeSubscription(url: String) {
+        viewModelScope.launch { repository.removeSubscription(url) }
+    }
+
+    // endregion
+
+    // region settings mutations
+
+    fun setRoutingMode(mode: RoutingMode) = viewModelScope.launch {
+        settings.setRoutingMode(mode)
+        MeelanoVpnService.log("Routing mode → ${mode.title}")
+    }
+
+    fun setCoreProtocolFilter(filter: CoreProtocolFilter) =
+        viewModelScope.launch { settings.setProtocolFilter(filter) }
+
+    fun toggleKillSwitch() = viewModelScope.launch {
+        settings.setKillSwitch(!killSwitchEnabled.value)
+        MeelanoVpnService.log("Kill Switch → ${!killSwitchEnabled.value}")
+    }
+
+    fun toggleSmartFailover() = viewModelScope.launch {
+        settings.setSmartFailover(!smartFailoverEnabled.value)
+    }
+
+    fun toggleAutoConnect() = viewModelScope.launch { settings.setAutoConnect(!autoConnectEnabled.value) }
+    fun toggleIpv6() = viewModelScope.launch { settings.setIpv6(!ipv6Enabled.value) }
+    fun toggleSoundMute() = viewModelScope.launch { settings.setSoundMuted(!isSoundMuted.value) }
+    fun toggleHaptics() = viewModelScope.launch { settings.setHaptics(!hapticsEnabled.value) }
+    fun toggleBiometric() = viewModelScope.launch { settings.setBiometric(!biometricEnabled.value) }
+    fun toggleLockOnStart() = viewModelScope.launch { settings.setLockOnStart(!lockOnStart.value) }
+    fun setThemeAccent(key: String) = viewModelScope.launch { settings.setThemeAccent(key) }
+    fun setDns(primary: String, secondary: String) = viewModelScope.launch {
+        settings.setDnsPrimary(primary)
+        settings.setDnsSecondary(secondary)
+        MeelanoVpnService.log("DNS → $primary, $secondary")
+    }
+
+    fun toggleBypassApp(packageName: String) =
+        viewModelScope.launch { repository.toggleBypassApp(packageName) }
+
+    fun reloadInstalledApps() = viewModelScope.launch { repository.loadInstalledApps() }
+
+    // endregion
+
+    // region simple UI toggles
+
+    fun setDashboardTab(index: Int) { _dashboardTab.value = index }
+    fun openServersModal() { _isServersModalOpen.value = true }
+    fun closeServersModal() { _isServersModalOpen.value = false }
+    fun openSettingsModal() { _isSettingsModalOpen.value = true }
+    fun closeSettingsModal() { _isSettingsModalOpen.value = false }
+    fun openLogsConsole() { _isLogsConsoleOpen.value = true }
+    fun closeLogsConsole() { _isLogsConsoleOpen.value = false }
+    fun openSplitTunneling() { _isSplitTunnelingOpen.value = true; reloadInstalledApps() }
+    fun closeSplitTunneling() { _isSplitTunnelingOpen.value = false }
+    fun openImport() { _isImportOpen.value = true }
+    fun closeImport() { _isImportOpen.value = false }
+    fun showQrCode(server: VpnServer) { _selectedServerForQr.value = server }
+    fun closeQrCode() { _selectedServerForQr.value = null }
+    fun closeSmartImportFallback() { _smartImportFallbackOpen.value = false }
+    fun setSearchQuery(query: String) { _searchQuery.value = query }
+    fun clearLogs() = MeelanoVpnService.clearLogs()
+    fun consumeToast() { _toast.value = null }
+
     fun triggerSmartImport(context: Context, configLink: String) {
-        val opened = SmartImportHelper.openInDestinationApp(context, configLink)
-        if (!opened) {
+        if (!SmartImportHelper.openInDestinationApp(context, configLink)) {
             _smartImportFallbackOpen.value = true
         }
     }
 
-    fun toggleBypassApp(packageName: String) {
-        repository.toggleBypassApp(packageName)
+    // endregion
+
+    private fun <T> state(flow: kotlinx.coroutines.flow.Flow<T>, initial: T): StateFlow<T> =
+        flow.stateIn(viewModelScope, SharingStarted.Eagerly, initial)
+
+    class Factory(
+        private val repository: ServerRepository,
+        private val settings: SettingsStore,
+        private val securityManager: SecurityManager
+    ) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            MainViewModel(repository, settings, securityManager) as T
     }
 }

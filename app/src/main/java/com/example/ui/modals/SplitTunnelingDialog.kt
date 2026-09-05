@@ -1,13 +1,13 @@
 package com.example.ui.modals
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,168 +19,177 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.BypassApp
+import com.example.ui.components.GlassCard
+import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoBgDark
-import com.example.ui.theme.MeelanoCyan
 import com.example.ui.theme.MeelanoGreenSuccess
-import com.example.ui.theme.MeelanoSurfaceCard
-import com.example.ui.theme.MeelanoSurfaceCardBorder
-import com.example.ui.theme.MeelanoSurfaceElevated
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
+/**
+ * Lists the apps actually installed on the device. Anything switched on is
+ * passed to `VpnService.Builder.addDisallowedApplication`, so its traffic never
+ * enters the tunnel.
+ */
 @Composable
 fun SplitTunnelingDialog(
     bypassApps: List<BypassApp>,
     onToggleApp: (String) -> Unit,
     onClose: () -> Unit
 ) {
-    Dialog(
-        onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
+    val accent = LocalAccent.current.primary
+    var query by remember { mutableStateOf("") }
+    var showSystem by remember { mutableStateOf(false) }
+
+    val filtered = bypassApps
+        .filter { showSystem || !it.isSystemApp }
+        .filter {
+            query.isBlank() || it.appName.contains(query, true) || it.packageName.contains(query, true)
+        }
+    val bypassedCount = bypassApps.count { it.isBypassed }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier
-                .fillMaxSize()
-                .background(MeelanoBgDark),
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.88f)
+                .clip(RoundedCornerShape(20.dp)),
             color = MeelanoBgDark
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(16.dp)
-            ) {
-                // Header
+            Column(Modifier.fillMaxWidth().padding(14.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = onClose,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MeelanoSurfaceElevated)
+                        modifier = Modifier.size(32.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.06f))
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "بستن",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Icon(Icons.Default.Close, "بستن", tint = TextSecondary, modifier = Modifier.size(16.dp))
                     }
-
                     Column(horizontalAlignment = Alignment.End) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "تفکیک برنامه‌ها (Split Tunneling)",
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.Default.PhoneAndroid,
-                                contentDescription = null,
-                                tint = Color(0xFFBA68C8),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Text(
-                            text = "برنامه‌های داخلی را بدون قطع VPN مستقیماً باز کنید",
-                            fontSize = 11.sp,
-                            color = TextMuted
-                        )
+                        Text("تونل تفکیکی", fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+                        Text("$bypassedCount اپ مستقیم از تونل خارج است", fontSize = 9.sp, color = TextMuted)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(Modifier.height(10.dp))
+
+                TextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("جستجوی برنامه…", fontSize = 12.sp, color = TextMuted) },
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = TextMuted, modifier = Modifier.size(18.dp)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("نمایش اپ‌های سیستمی", fontSize = 11.sp, color = TextSecondary)
+                    Switch(
+                        checked = showSystem,
+                        onCheckedChange = { showSystem = it },
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = accent,
+                            checkedThumbColor = Color.White,
+                            uncheckedTrackColor = Color.White.copy(alpha = 0.08f),
+                            uncheckedThumbColor = TextMuted
+                        )
+                    )
+                }
+
+                Spacer(Modifier.height(6.dp))
 
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(bypassApps, key = { it.packageName }) { app ->
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MeelanoSurfaceCard)
-                                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(12.dp))
-                                .padding(horizontal = 14.dp, vertical = 10.dp)
-                        ) {
+                    items(filtered, key = { it.packageName }) { app ->
+                        GlassCard(Modifier.fillMaxWidth(), corner = 12.dp, padding = 10.dp) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        app.appName,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        "${app.category} · ${app.packageName}",
+                                        fontSize = 8.sp,
+                                        color = TextMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                                 Switch(
                                     checked = app.isBypassed,
                                     onCheckedChange = { onToggleApp(app.packageName) },
                                     colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
                                         checkedTrackColor = MeelanoGreenSuccess,
-                                        uncheckedThumbColor = TextMuted,
-                                        uncheckedTrackColor = Color(0xFF1B2B4C)
+                                        checkedThumbColor = Color.White,
+                                        uncheckedTrackColor = Color.White.copy(alpha = 0.08f),
+                                        uncheckedThumbColor = TextMuted
                                     )
                                 )
-
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = app.appName,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
-                                    Text(
-                                        text = "${app.category} • ${app.packageName}",
-                                        fontSize = 10.sp,
-                                        color = TextMuted
-                                    )
-                                }
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Button(
-                    onClick = onClose,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MeelanoCyan,
-                        contentColor = Color.Black
-                    )
-                ) {
-                    Text(text = "ذخیره و اعمال", fontWeight = FontWeight.Bold)
-                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "تغییرات پس از اتصال بعدی اعمال می‌شود.",
+                    fontSize = 9.sp,
+                    color = TextMuted
+                )
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.example.ui.modals
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,45 +20,43 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.RadioButtonDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.CoreProtocolFilter
 import com.example.data.model.RoutingMode
+import com.example.ui.components.GlassCard
+import com.example.ui.components.Pill
+import com.example.ui.theme.AccentPreset
+import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoBgDark
-import com.example.ui.theme.MeelanoCyan
+import com.example.ui.theme.MeelanoGoldVip
 import com.example.ui.theme.MeelanoGreenSuccess
+import com.example.ui.theme.MeelanoPurpleActive
 import com.example.ui.theme.MeelanoRedKillSwitch
-import com.example.ui.theme.MeelanoSurfaceCard
-import com.example.ui.theme.MeelanoSurfaceCardBorder
-import com.example.ui.theme.MeelanoSurfaceElevated
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
@@ -69,486 +68,385 @@ fun SettingsModal(
     protocolFilter: CoreProtocolFilter,
     killSwitchEnabled: Boolean,
     smartFailoverEnabled: Boolean,
+    autoConnectEnabled: Boolean,
+    ipv6Enabled: Boolean,
+    hapticsEnabled: Boolean,
+    biometricEnabled: Boolean,
+    lockOnStart: Boolean,
+    themeAccent: String,
+    dnsPrimary: String,
+    dnsSecondary: String,
+    subscriptions: List<String>,
+    activeConfigLink: String,
     onClose: () -> Unit,
     onRoutingModeChange: (RoutingMode) -> Unit,
     onProtocolFilterChange: (CoreProtocolFilter) -> Unit,
     onToggleKillSwitch: () -> Unit,
     onToggleSmartFailover: () -> Unit,
+    onToggleAutoConnect: () -> Unit,
+    onToggleIpv6: () -> Unit,
+    onToggleHaptics: () -> Unit,
+    onToggleBiometric: () -> Unit,
+    onToggleLockOnStart: () -> Unit,
+    onAccentChange: (String) -> Unit,
+    onDnsChange: (String, String) -> Unit,
+    onAddSubscription: (String) -> Unit,
+    onRemoveSubscription: (String) -> Unit,
     onOpenLogs: () -> Unit,
     onOpenSplitTunneling: () -> Unit,
-    onLockApp: () -> Unit,
-    activeConfigLink: String
+    onLockApp: () -> Unit
 ) {
+    val accent = LocalAccent.current.primary
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
+    val scroll = rememberScrollState()
 
-    Dialog(
-        onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
-            modifier = Modifier
+    var dns1 by remember { mutableStateOf(dnsPrimary) }
+    var dns2 by remember { mutableStateOf(dnsSecondary) }
+    var newSubscription by remember { mutableStateOf("") }
+
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            Modifier
                 .fillMaxSize()
-                .background(MeelanoBgDark),
-            color = MeelanoBgDark
+                .background(MeelanoBgDark)
+                .padding(14.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 20.dp)
-            ) {
-                // Header (Close X, Title, Subtitle, Sliders Icon)
+            Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = onClose,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MeelanoSurfaceElevated)
+                        modifier = Modifier.size(36.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.06f))
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "بستن",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Icon(Icons.Default.Close, "بستن", tint = TextSecondary, modifier = Modifier.size(18.dp))
                     }
+                    Text("تنظیمات پیشرفته", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+                }
 
-                    Column(horizontalAlignment = Alignment.End) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "تنظیمات",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = null,
-                                tint = MeelanoCyan,
-                                modifier = Modifier.size(22.dp)
-                            )
+                Spacer(Modifier.height(14.dp))
+
+                SectionTitle("مسیریابی")
+                RoutingMode.entries.forEach { mode ->
+                    val selected = mode == routingMode
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        corner = 14.dp,
+                        padding = 12.dp,
+                        accent = if (selected) accent else null,
+                        onClick = { onRoutingModeChange(mode) }
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(mode.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text(mode.description, fontSize = 9.sp, color = TextMuted)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Pill(mode.badge, if (selected) accent else TextMuted)
                         }
-                        Text(
-                            text = "پیکربندی شبکه، امنیت و مسیرها",
-                            fontSize = 11.sp,
-                            color = TextMuted
-                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .verticalScroll(scrollState)
+                Spacer(Modifier.height(6.dp))
+                SectionTitle("فیلتر پروتکل هسته")
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    // SECTION 1: Traffic Routing (مسیریابی ترافیک)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "مسیریابی ترافیک",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = MeelanoCyan,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    RoutingMode.entries.forEach { mode ->
-                        val isSelected = mode == routingMode
+                    CoreProtocolFilter.entries.take(5).forEach { filter ->
+                        val selected = filter == protocolFilter
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(if (isSelected) Color(0xFF0F2642) else MeelanoSurfaceCard)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (selected) accent.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.05f))
                                 .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) MeelanoCyan else MeelanoSurfaceCardBorder,
-                                    shape = RoundedCornerShape(14.dp)
+                                    1.dp,
+                                    if (selected) accent.copy(alpha = 0.5f) else Color.Transparent,
+                                    RoundedCornerShape(10.dp)
                                 )
-                                .clickable { onRoutingModeChange(mode) }
-                                .padding(12.dp)
+                                .clickable { onProtocolFilterChange(filter) }
+                                .padding(horizontal = 10.dp, vertical = 7.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = { onRoutingModeChange(mode) },
-                                    colors = RadioButtonDefaults.colors(
-                                        selectedColor = MeelanoCyan,
-                                        unselectedColor = TextMuted
-                                    )
-                                )
-
-                                Column(
-                                    horizontalAlignment = Alignment.End,
-                                    modifier = Modifier.weight(1f).padding(start = 8.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(MeelanoSurfaceElevated)
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        ) {
-                                            Text(
-                                                text = mode.badge,
-                                                fontSize = 9.sp,
-                                                color = MeelanoCyan
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = mode.title,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TextPrimary
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    Text(
-                                        text = mode.description,
-                                        fontSize = 11.sp,
-                                        color = TextSecondary,
-                                        lineHeight = 15.sp
-                                    )
-                                }
-                            }
+                            Text(
+                                filter.label,
+                                fontSize = 10.sp,
+                                color = if (selected) accent else TextSecondary,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
+                }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("امنیت")
+                SettingSwitch(
+                    "Kill Switch",
+                    "قطع کامل ترافیک هنگام افت تونل (رابط در حالت blocking)",
+                    killSwitchEnabled,
+                    MeelanoRedKillSwitch,
+                    onToggleKillSwitch
+                )
+                SettingSwitch(
+                    "Smart Failover",
+                    "در صورت خرابی نود، خودکار به سریع‌ترین نود سالم سوییچ کن",
+                    smartFailoverEnabled,
+                    MeelanoGreenSuccess,
+                    onToggleSmartFailover
+                )
+                SettingSwitch(
+                    "احراز هویت بیومتریک",
+                    "باز کردن قفل با اثر انگشت یا چهره",
+                    biometricEnabled,
+                    MeelanoPurpleActive,
+                    onToggleBiometric
+                )
+                SettingSwitch(
+                    "قفل هنگام اجرا",
+                    "هر بار که اپ باز می‌شود، صفحه قفل نمایش داده شود",
+                    lockOnStart,
+                    MeelanoGoldVip,
+                    onToggleLockOnStart
+                )
 
-                    // SECTION 2: Core Protocol (پروتکل هسته)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "پروتکل هسته",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.Bolt,
-                            contentDescription = null,
-                            tint = Color(0xFFFFD54F),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("اتصال")
+                SettingSwitch("اتصال خودکار", "با باز شدن اپ به‌صورت خودکار وصل شو", autoConnectEnabled, accent, onToggleAutoConnect)
+                SettingSwitch("پشتیبانی IPv6", "افزودن مسیر IPv6 به تونل", ipv6Enabled, accent, onToggleIpv6)
+                SettingSwitch("بازخورد لمسی", "لرزش هنگام تغییر وضعیت اتصال", hapticsEnabled, accent, onToggleHaptics)
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        CoreProtocolFilter.entries.reversed().forEach { filter ->
-                            val isFilterSelected = filter == protocolFilter
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("رنگ‌بندی برنامه")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AccentPreset.entries.forEach { preset ->
+                        val selected = preset.key == themeAccent
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(preset.primary.copy(alpha = if (selected) 0.20f else 0.06f))
+                                .border(
+                                    1.dp,
+                                    if (selected) preset.primary else Color.Transparent,
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .clickable { onAccentChange(preset.key) }
+                                .padding(vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
                             Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(38.dp)
-                                    .clip(RoundedCornerShape(10.dp))
+                                Modifier
+                                    .size(18.dp)
+                                    .clip(CircleShape)
                                     .background(
-                                        if (isFilterSelected) MeelanoCyan else MeelanoSurfaceCard
+                                        androidx.compose.ui.graphics.Brush.linearGradient(
+                                            listOf(preset.primary, preset.secondary)
+                                        )
                                     )
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isFilterSelected) MeelanoCyan else MeelanoSurfaceCardBorder,
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable { onProtocolFilterChange(filter) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = filter.label,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isFilterSelected) Color.Black else TextPrimary
-                                )
-                            }
+                            )
+                            Spacer(Modifier.height(5.dp))
+                            Text(preset.label, fontSize = 9.sp, color = if (selected) TextPrimary else TextSecondary)
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // SECTION 3: Security & Stability (امنیت و پایداری)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "امنیت و پایداری",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = Color(0xFFFF5252),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Kill Switch Card
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF261019))
-                            .border(1.dp, Color(0xFF5A1C2C), RoundedCornerShape(14.dp))
-                            .padding(14.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Switch(
-                                checked = killSwitchEnabled,
-                                onCheckedChange = { onToggleKillSwitch() },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = MeelanoRedKillSwitch,
-                                    uncheckedThumbColor = TextMuted,
-                                    uncheckedTrackColor = Color(0xFF381A25)
-                                )
-                            )
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = "قطع اضطراری (Kill Switch)",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
-                                    Text(
-                                        text = "انسداد اینترنت در قطعی VPN",
-                                        fontSize = 11.sp,
-                                        color = TextMuted
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Icon(
-                                    imageVector = Icons.Default.Security,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFF5252),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Smart Failover Card
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF0C241F))
-                            .border(1.dp, Color(0xFF1B4E44), RoundedCornerShape(14.dp))
-                            .padding(14.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Switch(
-                                checked = smartFailoverEnabled,
-                                onCheckedChange = { onToggleSmartFailover() },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = MeelanoGreenSuccess,
-                                    uncheckedThumbColor = TextMuted,
-                                    uncheckedTrackColor = Color(0xFF13362E)
-                                )
-                            )
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = "سوییچ هوشمند (Failover)",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TextPrimary
-                                    )
-                                    Text(
-                                        text = "تغییر خودکار سرور در قطعی",
-                                        fontSize = 11.sp,
-                                        color = TextMuted
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Icon(
-                                    imageVector = Icons.Default.Sync,
-                                    contentDescription = null,
-                                    tint = MeelanoGreenSuccess,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // SECTION 4: Tools & Access (ابزارها و دسترسی‌ها)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "ابزارها و دسترسی‌ها",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = Color(0xFFBA68C8),
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        // Download Config
-                        IconButton(
-                            onClick = { SmartImportHelper.copyToClipboard(context, activeConfigLink) },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MeelanoSurfaceCard)
-                                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(12.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Download,
-                                contentDescription = "دریافت کانفیگ",
-                                tint = MeelanoCyan
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Lock App
-                        IconButton(
-                            onClick = onLockApp,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MeelanoSurfaceCard)
-                                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(12.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "قفل امنیتی",
-                                tint = Color(0xFF00E5FF)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Terminal Log Console (>_)
-                        IconButton(
-                            onClick = onOpenLogs,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MeelanoSurfaceCard)
-                                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(12.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Terminal,
-                                contentDescription = "کنسول لاگ",
-                                tint = Color(0xFFFFD54F)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Split Tunneling (Phone)
-                        IconButton(
-                            onClick = onOpenSplitTunneling,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MeelanoSurfaceCard)
-                                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(12.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PhoneAndroid,
-                                contentDescription = "تفکیک برنامه‌ها",
-                                tint = Color(0xFFBA68C8)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
                 }
 
-                // Bottom Action Button: تایید (Confirm)
-                Button(
-                    onClick = onClose,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MeelanoCyan,
-                        contentColor = Color.Black
-                    )
-                ) {
-                    Text(
-                        text = "تایید",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("DNS")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CompactField(dns1, { dns1 = it }, "DNS اول", Modifier.weight(1f))
+                    CompactField(dns2, { dns2 = it }, "DNS دوم", Modifier.weight(1f))
                 }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        "Cloudflare" to ("1.1.1.1" to "1.0.0.1"),
+                        "Google" to ("8.8.8.8" to "8.8.4.4"),
+                        "Shecan" to ("178.22.122.100" to "185.51.200.2")
+                    ).forEach { (label, pair) ->
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .clickable {
+                                    dns1 = pair.first
+                                    dns2 = pair.second
+                                    onDnsChange(pair.first, pair.second)
+                                }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(label, fontSize = 10.sp, color = TextSecondary)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                PrimaryButton("ذخیره DNS", accent) { onDnsChange(dns1.trim(), dns2.trim()) }
+
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("اشتراک‌های سرور (${subscriptions.size})")
+                subscriptions.forEach { url ->
+                    GlassCard(Modifier.fillMaxWidth().padding(bottom = 6.dp), corner = 12.dp, padding = 10.dp) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                url,
+                                fontSize = 9.sp,
+                                color = TextSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                Icons.Default.Delete,
+                                "حذف",
+                                tint = MeelanoRedKillSwitch,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clickable { onRemoveSubscription(url) }
+                            )
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    CompactField(newSubscription, { newSubscription = it }, "https://…", Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(accent.copy(alpha = 0.18f))
+                            .clickable {
+                                onAddSubscription(newSubscription)
+                                newSubscription = ""
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Add, "افزودن", tint = accent, modifier = Modifier.size(20.dp))
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("ابزارها")
+                ToolRow("تونل تفکیکی (Split Tunneling)", MeelanoPurpleActive, onOpenSplitTunneling)
+                ToolRow("کنسول لاگ زنده", MeelanoGreenSuccess, onOpenLogs)
+                ToolRow("قفل کردن برنامه", MeelanoGoldVip, onLockApp)
+                ToolRow("کپی کانفیگ سرور فعال", accent) {
+                    SmartImportHelper.copyToClipboard(context, activeConfigLink)
+                }
+                ToolRow("اشتراک‌گذاری کانفیگ فعال", accent) {
+                    SmartImportHelper.shareConfig(context, activeConfigLink)
+                }
+
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "MeeLano Tunnel · نسخه ۲٫۰ · MEELANO STUDIO DESIGN",
+                    fontSize = 9.sp,
+                    color = TextMuted,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(24.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.ExtraBold,
+        color = TextPrimary,
+        modifier = Modifier.padding(bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun SettingSwitch(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    color: Color,
+    onToggle: () -> Unit
+) {
+    GlassCard(Modifier.fillMaxWidth().padding(bottom = 8.dp), corner = 14.dp, padding = 12.dp) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                Text(subtitle, fontSize = 9.sp, color = TextMuted)
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = { onToggle() },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color.White,
+                    checkedTrackColor = color,
+                    uncheckedThumbColor = TextMuted,
+                    uncheckedTrackColor = Color.White.copy(alpha = 0.08f)
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolRow(title: String, color: Color, onClick: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth().padding(bottom = 8.dp), corner = 14.dp, padding = 12.dp, onClick = onClick) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(8.dp).clip(CircleShape).background(color)
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(title, fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun CompactField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier = Modifier
+) {
+    TextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = { Text(placeholder, fontSize = 11.sp, color = TextMuted) },
+        singleLine = true,
+        modifier = modifier.clip(RoundedCornerShape(12.dp)),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = Color.White.copy(alpha = 0.05f),
+            unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+            focusedTextColor = TextPrimary,
+            unfocusedTextColor = TextPrimary
+        )
+    )
+}
+
+@Composable
+private fun PrimaryButton(text: String, color: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(color.copy(alpha = 0.18f))
+            .border(1.dp, color.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, fontSize = 12.sp, color = color, fontWeight = FontWeight.Bold)
     }
 }

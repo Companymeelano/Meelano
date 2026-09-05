@@ -1,146 +1,155 @@
 package com.example.ui.components
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.material3.Text
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.NetworkLiveStats
-import com.example.ui.theme.MeelanoCyan
-import com.example.ui.theme.MeelanoSurfaceCard
-import com.example.ui.theme.MeelanoSurfaceCardBorder
+import com.example.ui.theme.MeelanoGreenSuccess
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 
+/**
+ * Live throughput graph. The series is the *measured* per-second download rate
+ * reported by the tunnel's byte counters, drawn as a smoothed spline with a
+ * gradient fill, a moving peak marker and a grid annotated in Mb/s.
+ */
 @Composable
 fun TrafficLineChart(
     stats: NetworkLiveStats,
+    accent: Color,
     modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(130.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MeelanoSurfaceCard)
-            .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(16.dp))
-            .padding(12.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+    val series = stats.speedHistory.takeLast(24)
+    val peak = (series.maxOrNull() ?: 0f).coerceAtLeast(1f)
+    val animatedPeak by animateFloatAsState(peak, tween(600), label = "peak")
+
+    GlassCard(modifier = modifier.fillMaxWidth(), accent = accent, padding = 14.dp) {
+        Column(Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "مانیتورینگ زنده ترافیک شبکه",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = TextSecondary
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .width(6.dp)
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(MeelanoCyan)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "${stats.downloadMbps} Mbps",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MeelanoCyan
-                    )
+                Column {
+                    Text("نمودار ترافیک زنده", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("اندازه‌گیری واقعی از رابط TUN", color = TextMuted, fontSize = 10.sp)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("${stats.downloadMbps} Mb/s", color = accent, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("اوج: ${"%.1f".format(peak)}", color = TextSecondary, fontSize = 10.sp)
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
-            val history = stats.speedHistory.ifEmpty { listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f) }
-            val maxSpeed = (history.maxOrNull() ?: 10f).coerceAtLeast(30f)
-
-            Canvas(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f)
+                    .height(140.dp)
             ) {
-                val w = size.width
-                val h = size.height
+                Canvas(modifier = Modifier.fillMaxWidth().height(140.dp)) {
+                    val w = size.width
+                    val h = size.height
 
-                // Draw subtle horizontal gridlines
-                val gridY1 = h * 0.25f
-                val gridY2 = h * 0.65f
-                drawLine(Color(0xFF1B2B4C), Offset(0f, gridY1), Offset(w, gridY1), strokeWidth = 1f)
-                drawLine(Color(0xFF1B2B4C), Offset(0f, gridY2), Offset(w, gridY2), strokeWidth = 1f)
-
-                if (history.size > 1) {
-                    val stepX = w / (history.size - 1)
-                    val strokePath = Path()
-                    val fillPath = Path()
-
-                    val firstY = h - (history[0] / maxSpeed) * h
-                    strokePath.moveTo(0f, firstY)
-                    fillPath.moveTo(0f, h)
-                    fillPath.lineTo(0f, firstY)
-
-                    for (i in 1 until history.size) {
-                        val prevX = (i - 1) * stepX
-                        val prevY = h - (history[i - 1] / maxSpeed) * h
-                        val curX = i * stepX
-                        val curY = h - (history[i] / maxSpeed) * h
-
-                        val cx = (prevX + curX) / 2f
-                        strokePath.cubicTo(cx, prevY, cx, curY, curX, curY)
-                        fillPath.cubicTo(cx, prevY, cx, curY, curX, curY)
+                    // grid
+                    val dash = PathEffect.dashPathEffect(floatArrayOf(6f, 10f))
+                    for (i in 0..4) {
+                        val y = h * i / 4f
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.06f),
+                            start = Offset(0f, y),
+                            end = Offset(w, y),
+                            strokeWidth = 1f,
+                            pathEffect = dash
+                        )
                     }
 
-                    fillPath.lineTo(w, h)
-                    fillPath.close()
+                    if (series.size < 2) return@Canvas
 
-                    // Gradient under line
+                    val stepX = w / (series.size - 1).toFloat()
+                    fun pointAt(index: Int): Offset {
+                        val value = series[index].coerceAtLeast(0f)
+                        return Offset(stepX * index, h - (value / animatedPeak).coerceIn(0f, 1f) * (h * 0.88f))
+                    }
+
+                    val line = Path().apply {
+                        moveTo(pointAt(0).x, pointAt(0).y)
+                        for (i in 0 until series.size - 1) {
+                            val current = pointAt(i)
+                            val next = pointAt(i + 1)
+                            val midX = (current.x + next.x) / 2f
+                            cubicTo(midX, current.y, midX, next.y, next.x, next.y)
+                        }
+                    }
+                    val area = Path().apply {
+                        addPath(line)
+                        lineTo(w, h)
+                        lineTo(0f, h)
+                        close()
+                    }
+
                     drawPath(
-                        path = fillPath,
+                        path = area,
                         brush = Brush.verticalGradient(
-                            colors = listOf(MeelanoCyan.copy(alpha = 0.25f), Color.Transparent)
+                            listOf(accent.copy(alpha = 0.35f), Color.Transparent)
                         )
                     )
-
-                    // Curve stroke
                     drawPath(
-                        path = strokePath,
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(Color(0xFF0091EA), MeelanoCyan)
-                        ),
-                        style = Stroke(width = 3.5f, cap = StrokeCap.Round)
+                        path = line,
+                        brush = Brush.horizontalGradient(listOf(accent, MeelanoGreenSuccess)),
+                        style = Stroke(width = 2.6f.dp.toPx(), cap = StrokeCap.Round)
                     )
+
+                    val last = pointAt(series.size - 1)
+                    drawCircle(accent.copy(alpha = 0.25f), radius = 12f, center = last)
+                    drawCircle(accent, radius = 4.5f, center = last)
                 }
             }
+
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                LegendDot("دانلود ${stats.downloadMbps} Mb/s", accent)
+                LegendDot("آپلود ${stats.uploadMbps} Mb/s", MeelanoGreenSuccess)
+                Text("مدت: ${stats.uptimeLabel}", color = TextSecondary, fontSize = 10.sp)
+            }
         }
+    }
+}
+
+@Composable
+private fun LegendDot(label: String, color: Color) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Canvas(Modifier.padding(end = 4.dp).size(8.dp)) {
+            drawCircle(color, radius = size.minDimension / 2f)
+        }
+        Text(label, color = TextSecondary, fontSize = 10.sp)
     }
 }

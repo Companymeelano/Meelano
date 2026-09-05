@@ -7,64 +7,107 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 
+/**
+ * Hands a config link to whichever compatible client is installed, and offers
+ * generic share / clipboard fallbacks. Also reads links back off the clipboard
+ * for the in-app import flow.
+ */
 object SmartImportHelper {
 
-    private const val PACKAGE_V2RAYNG = "com.v2ray.ang"
-    private const val PACKAGE_V2BOX = "dev.v2box.app"
+    val SUPPORTED_CLIENTS = listOf(
+        "com.v2ray.ang" to "v2rayNG",
+        "dev.v2box.app" to "V2Box",
+        "app.hiddify.com" to "Hiddify",
+        "com.github.kr328.clash" to "Clash Meta",
+        "io.nekohasekai.sfa" to "sing-box"
+    )
+
+    fun installedClients(context: Context): List<Pair<String, String>> =
+        SUPPORTED_CLIENTS.filter { (pkg, _) ->
+            context.packageManager.getLaunchIntentForPackage(pkg) != null
+        }
 
     fun openInDestinationApp(context: Context, configLink: String): Boolean {
-        // Copy link to clipboard first to ensure seamless import in all apps
         copyToClipboard(context, configLink, showToast = false)
 
-        val pm = context.packageManager
-        val v2rayNgIntent = pm.getLaunchIntentForPackage(PACKAGE_V2RAYNG)
-        val v2boxIntent = pm.getLaunchIntentForPackage(PACKAGE_V2BOX)
+        // 1. Deep-link straight into a known client with the config URI.
+        for ((pkg, label) in SUPPORTED_CLIENTS) {
+            val launch = context.packageManager.getLaunchIntentForPackage(pkg) ?: continue
+            val deepLink = Intent(Intent.ACTION_VIEW, Uri.parse(configLink)).apply {
+                setPackage(pkg)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val opened = runCatching { context.startActivity(deepLink); true }.getOrElse {
+                runCatching {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launch)
+                    true
+                }.getOrDefault(false)
+            }
+            if (opened) {
+                Toast.makeText(context, "در حال باز کردن $label — کانفیگ در کلیپ‌بورد کپی شد", Toast.LENGTH_SHORT).show()
+                return true
+            }
+        }
 
-        if (v2rayNgIntent != null) {
-            v2rayNgIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(v2rayNgIntent)
-            Toast.makeText(context, "در حال باز کردن v2rayNG... کانفیگ در کلیپ‌بورد کپی شد", Toast.LENGTH_SHORT).show()
-            return true
-        } else if (v2boxIntent != null) {
-            v2boxIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(v2boxIntent)
-            Toast.makeText(context, "در حال باز کردن V2Box... کانفیگ در کلیپ‌بورد کپی شد", Toast.LENGTH_SHORT).show()
-            return true
-        } else {
-            // Try generic view intent with config URI
-            try {
-                val viewIntent = Intent(Intent.ACTION_VIEW, Uri.parse(configLink)).apply {
+        // 2. Any app registered for the scheme.
+        return runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(configLink)).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(viewIntent)
-                return true
-            } catch (_: Exception) {
-                // Not installed, return false to trigger Play Store fallback dialog
-                return false
-            }
+            )
+            true
+        }.getOrDefault(false)
+    }
+
+    fun shareConfig(context: Context, configLink: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, configLink)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching {
+            context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری کانفیگ").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
         }
     }
 
-    fun openPlayStore(context: Context, packageName: String = PACKAGE_V2RAYNG) {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    fun openPlayStore(context: Context, packageName: String = "com.v2ray.ang") {
+        runCatching {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+        }.onFailure {
+            runCatching {
+                context.startActivity(
+                    Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+                    ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                )
             }
-            context.startActivity(intent)
-        } catch (_: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(webIntent)
         }
     }
 
     fun copyToClipboard(context: Context, text: String, showToast: Boolean = true) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("MeeLano Config", text)
-        clipboard.setPrimaryClip(clip)
+        clipboard.setPrimaryClip(ClipData.newPlainText("MeeLano Config", text))
         if (showToast) {
-            Toast.makeText(context, "کانفیگ با موفقیت کپی شد ✓", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "کانفیگ کپی شد ✓", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun readClipboard(context: Context): String {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        return clipboard.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(context)
+            ?.toString()
+            .orEmpty()
     }
 }

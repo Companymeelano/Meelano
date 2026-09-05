@@ -1,5 +1,6 @@
 package com.example.ui.modals
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,98 +21,104 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.NetworkPing
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.South
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.data.model.ServerSort
 import com.example.data.model.VpnServer
+import com.example.data.repository.ServerRepository
+import com.example.ui.components.GlassCard
+import com.example.ui.components.Pill
+import com.example.ui.components.SignalBars
+import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoBgDark
-import com.example.ui.theme.MeelanoCyan
 import com.example.ui.theme.MeelanoGoldVip
 import com.example.ui.theme.MeelanoGreenSuccess
-import com.example.ui.theme.MeelanoSurfaceCard
-import com.example.ui.theme.MeelanoSurfaceCardBorder
-import com.example.ui.theme.MeelanoSurfaceElevated
-import com.example.ui.theme.PingGreen
+import com.example.ui.theme.MeelanoRedKillSwitch
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
-import com.example.util.SmartImportHelper
+import com.example.ui.theme.pingColor
 
 @Composable
 fun ServerListModal(
     vipServers: List<VpnServer>,
     freeServers: List<VpnServer>,
+    customServers: List<VpnServer>,
     activeServer: VpnServer,
     isTestingPing: Boolean,
-    isUpdatingGitHub: Boolean,
+    isUpdating: Boolean,
+    progressLabel: String?,
+    progressFraction: Float,
+    sort: ServerSort,
+    searchQuery: String,
+    onSearch: (String) -> Unit,
+    onSortChange: (ServerSort) -> Unit,
     onClose: () -> Unit,
     onSelectServer: (VpnServer) -> Unit,
-    onTestPing: (isVip: Boolean) -> Unit,
-    onSortLowestPing: (isVip: Boolean) -> Unit,
-    onUpdateGitHub: () -> Unit,
+    onTestPing: (ServerRepository.ServerScope) -> Unit,
+    onRefreshSubscriptions: () -> Unit,
     onShowQr: (VpnServer) -> Unit,
-    onSmartImport: (VpnServer) -> Unit
+    onSmartImport: (VpnServer) -> Unit,
+    onToggleFavorite: (VpnServer) -> Unit,
+    onDeleteCustom: (VpnServer) -> Unit,
+    onOpenImport: () -> Unit
 ) {
-    val context = LocalContext.current
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: VIP, 1: Free
-    var searchQuery by remember { mutableStateOf("") }
-
-    val currentList = if (selectedTab == 0) vipServers else freeServers
-    val filteredList = currentList.filter {
-        it.name.contains(searchQuery, ignoreCase = true) ||
-        it.countryName.contains(searchQuery, ignoreCase = true) ||
-        it.protocol.contains(searchQuery, ignoreCase = true)
+    val accent = LocalAccent.current.primary
+    var tab by remember { mutableIntStateOf(0) }
+    val list = when (tab) {
+        0 -> vipServers
+        1 -> freeServers
+        else -> customServers
+    }
+    val scope = when (tab) {
+        0 -> ServerRepository.ServerScope.VIP
+        1 -> ServerRepository.ServerScope.FREE
+        else -> ServerRepository.ServerScope.CUSTOM
     }
 
-    Dialog(
-        onDismissRequest = onClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
-    ) {
-        Surface(
+    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MeelanoBgDark),
-            color = MeelanoBgDark
+                .background(MeelanoBgDark)
+                .padding(14.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 20.dp)
-            ) {
-                // Header (Close X, Title, Subtitle, Globe Icon)
+            Column(Modifier.fillMaxSize()) {
+                // header
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -120,272 +127,154 @@ fun ServerListModal(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(MeelanoSurfaceElevated)
+                            .background(Color.White.copy(alpha = 0.06f))
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "بستن",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Icon(Icons.Default.Close, "بستن", tint = TextSecondary, modifier = Modifier.size(18.dp))
                     }
-
                     Column(horizontalAlignment = Alignment.End) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "سرورها",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.Default.Language,
-                                contentDescription = null,
-                                tint = MeelanoCyan,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Text(
-                            text = "لوکیشن‌های اختصاصی VIP و رایگان گیت‌هاب",
-                            fontSize = 11.sp,
-                            color = TextMuted
-                        )
+                        Text("انتخاب سرور", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = TextPrimary)
+                        Text("${list.size} نود در این دسته", fontSize = 10.sp, color = TextMuted)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // VIP vs Free Tabs
+                // tabs
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // VIP Tab
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (selectedTab == 0) Color(0xFF261D0C) else MeelanoSurfaceCard
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (selectedTab == 0) MeelanoGoldVip else MeelanoSurfaceCardBorder,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .clickable { selectedTab = 0 }
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "👑",
-                                fontSize = 14.sp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "سرورهای (${vipServers.size}) VIP",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selectedTab == 0) MeelanoGoldVip else TextSecondary
-                            )
-                        }
-                    }
-
-                    // Free Tab
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (selectedTab == 1) Color(0xFF0D2520) else MeelanoSurfaceCard
-                            )
-                            .border(
-                                width = 1.dp,
-                                color = if (selectedTab == 1) MeelanoGreenSuccess else MeelanoSurfaceCardBorder,
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .clickable { selectedTab = 1 }
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Bolt,
-                                contentDescription = null,
-                                tint = if (selectedTab == 1) MeelanoGreenSuccess else TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "سرورهای رایگان (${freeServers.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selectedTab == 1) MeelanoGreenSuccess else TextSecondary
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Search Bar
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "جستجوی کشور یا پروتکل...",
-                            fontSize = 12.sp,
-                            color = TextMuted
-                        )
-                    },
-                    trailingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = TextMuted
-                        )
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MeelanoCyan,
-                        unfocusedBorderColor = MeelanoSurfaceCardBorder,
-                        focusedContainerColor = MeelanoSurfaceCard,
-                        unfocusedContainerColor = MeelanoSurfaceCard,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Action Bar (کمترین پینگ / تست پینگ / بروزرسانی گیت‌هاب)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.04f))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Left action pills
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // Sort Lowest Ping Button
+                    listOf(
+                        "VIP (${vipServers.size})" to MeelanoGoldVip,
+                        "رایگان (${freeServers.size})" to accent,
+                        "شخصی (${customServers.size})" to MeelanoGreenSuccess
+                    ).forEachIndexed { index, (title, color) ->
+                        val selected = index == tab
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MeelanoSurfaceElevated)
-                                .clickable { onSortLowestPing(selectedTab == 0) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .weight(1f)
+                                .clip(RoundedCornerShape(11.dp))
+                                .background(
+                                    if (selected) Brush.horizontalGradient(
+                                        listOf(color.copy(alpha = 0.28f), color.copy(alpha = 0.08f))
+                                    ) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+                                )
+                                .clickable { tab = index }
+                                .padding(vertical = 9.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.South,
-                                    contentDescription = null,
-                                    tint = MeelanoCyan,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "کمترین پینگ",
-                                    fontSize = 11.sp,
-                                    color = TextPrimary
-                                )
-                            }
-                        }
-
-                        // Free Tab GitHub Update Button
-                        if (selectedTab == 1) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(MeelanoCyan)
-                                    .clickable(enabled = !isUpdatingGitHub) { onUpdateGitHub() }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (isUpdatingGitHub) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(12.dp),
-                                            color = Color.Black,
-                                            strokeWidth = 2.dp
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = null,
-                                            tint = Color.Black,
-                                            modifier = Modifier.size(13.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "بروزرسانی گیت‌هاب",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Black
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Test Ping Button
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MeelanoSurfaceElevated)
-                            .clickable(enabled = !isTestingPing) { onTestPing(selectedTab == 0) }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isTestingPing) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(12.dp),
-                                    color = MeelanoGoldVip,
-                                    strokeWidth = 2.dp
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = null,
-                                    tint = MeelanoGoldVip,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "تست پینگ",
+                                title,
                                 fontSize = 11.sp,
-                                color = TextPrimary
+                                color = if (selected) TextPrimary else TextSecondary,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(Modifier.height(10.dp))
 
-                // Server Cards List
-                LazyColumn(
+                // search
+                TextField(
+                    value = searchQuery,
+                    onValueChange = onSearch,
+                    placeholder = { Text("جستجوی کشور، نام یا پروتکل…", fontSize = 12.sp, color = TextMuted) },
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = TextMuted, modifier = Modifier.size(18.dp)) },
+                    singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredList, key = { it.id }) { server ->
-                        ServerCardItem(
-                            server = server,
-                            isActive = server.id == activeServer.id,
-                            onSelect = { onSelectServer(server) },
-                            onShowQr = { onShowQr(server) },
-                            onSmartImport = { onSmartImport(server) },
-                            onCopy = { SmartImportHelper.copyToClipboard(context, server.configLink) }
+                        .clip(RoundedCornerShape(12.dp)),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.05f),
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary
+                    )
+                )
+
+                Spacer(Modifier.height(10.dp))
+
+                // action bar
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ActionChip(
+                        text = if (isTestingPing) "در حال تست…" else "تست پینگ",
+                        icon = Icons.Default.NetworkPing,
+                        color = accent,
+                        loading = isTestingPing,
+                        modifier = Modifier.weight(1f)
+                    ) { onTestPing(scope) }
+
+                    if (tab == 1) {
+                        ActionChip(
+                            text = if (isUpdating) "به‌روزرسانی…" else "به‌روزرسانی",
+                            icon = Icons.Default.Refresh,
+                            color = MeelanoGreenSuccess,
+                            loading = isUpdating,
+                            modifier = Modifier.weight(1f)
+                        ) { onRefreshSubscriptions() }
+                    } else {
+                        ActionChip(
+                            text = "افزودن",
+                            icon = Icons.Default.Add,
+                            color = MeelanoGreenSuccess,
+                            modifier = Modifier.weight(1f)
+                        ) { onOpenImport() }
+                    }
+
+                    ActionChip(
+                        text = sort.label,
+                        icon = Icons.Default.Sort,
+                        color = MeelanoGoldVip,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        val order = ServerSort.entries
+                        onSortChange(order[(order.indexOf(sort) + 1) % order.size])
+                    }
+                }
+
+                AnimatedVisibility(visible = progressLabel != null) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        Text(progressLabel.orEmpty(), fontSize = 10.sp, color = TextSecondary)
+                        Spacer(Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { progressFraction },
+                            modifier = Modifier.fillMaxWidth().height(3.dp),
+                            color = accent,
+                            trackColor = Color.White.copy(alpha = 0.08f)
                         )
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                if (list.isEmpty()) {
+                    EmptyState(tab = tab, onRefresh = onRefreshSubscriptions, onImport = onOpenImport)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(list, key = { it.id }) { server ->
+                            ServerRow(
+                                server = server,
+                                isActive = server.id == activeServer.id,
+                                accent = accent,
+                                canDelete = tab == 2,
+                                onSelect = { onSelectServer(server) },
+                                onShowQr = { onShowQr(server) },
+                                onSmartImport = { onSmartImport(server) },
+                                onToggleFavorite = { onToggleFavorite(server) },
+                                onDelete = { onDeleteCustom(server) }
+                            )
+                        }
                     }
                 }
             }
@@ -394,202 +283,183 @@ fun ServerListModal(
 }
 
 @Composable
-fun ServerCardItem(
+private fun ServerRow(
     server: VpnServer,
     isActive: Boolean,
+    accent: Color,
+    canDelete: Boolean,
     onSelect: () -> Unit,
     onShowQr: () -> Unit,
     onSmartImport: () -> Unit,
-    onCopy: () -> Unit
+    onToggleFavorite: () -> Unit,
+    onDelete: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MeelanoSurfaceCard)
-            .border(
-                width = 1.dp,
-                color = if (isActive) MeelanoCyan else MeelanoSurfaceCardBorder,
-                shape = RoundedCornerShape(14.dp)
-            )
-            .padding(12.dp)
+    GlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        corner = 14.dp,
+        padding = 11.dp,
+        accent = if (isActive) accent else null,
+        onClick = onSelect
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            // Top Row: Title, Protocol badge, Flag
+        Column(Modifier.fillMaxWidth()) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Protocol & VIP Badges
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (server.isVip) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF332306))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Text(server.flagEmoji, fontSize = 22.sp)
+                    Spacer(Modifier.width(9.dp))
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "VIP",
-                                fontSize = 9.sp,
+                                server.name,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MeelanoGoldVip
+                                color = TextPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                when (server.protocol) {
-                                    "Reality" -> Color(0xFF381A4E)
-                                    "Hysteria 2" -> Color(0xFF421528)
-                                    else -> Color(0xFF0F2C47)
-                                }
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = server.protocol.uppercase(),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = when (server.protocol) {
-                                "Reality" -> Color(0xFFCE93D8)
-                                "Hysteria 2" -> Color(0xFFFF80AB)
-                                else -> MeelanoCyan
+                            if (server.isVip) {
+                                Spacer(Modifier.width(5.dp))
+                                Pill("VIP", MeelanoGoldVip)
                             }
+                            if (isActive) {
+                                Spacer(Modifier.width(5.dp))
+                                Pill("فعال", MeelanoGreenSuccess)
+                            }
+                        }
+                        Text(
+                            "${server.countryName} · ${server.protocol}",
+                            fontSize = 9.sp,
+                            color = TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            server.hostLabel,
+                            fontSize = 8.sp,
+                            color = TextMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
 
-                // Name & Flag
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = server.name,
+                        when {
+                            server.pingMs > 0 -> "${server.pingMs}ms"
+                            server.pingMs < 0 -> "قطع"
+                            else -> "—"
+                        },
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (server.pingMs < 0) MeelanoRedKillSwitch else pingColor(server.pingMs)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = server.flagEmoji, fontSize = 16.sp)
+                    Spacer(Modifier.height(3.dp))
+                    SignalBars(server.pingMs, barHeight = 11)
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
 
-            // Sub info: Speed, Ping, Location
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Left stats
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MiniIcon(if (server.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                    if (server.isFavorite) MeelanoGoldVip else TextMuted, onToggleFavorite)
+                MiniIcon(Icons.Default.QrCode, accent, onShowQr)
+                MiniIcon(Icons.Default.Send, MeelanoGreenSuccess, onSmartImport)
+                if (canDelete) MiniIcon(Icons.Default.Delete, MeelanoRedKillSwitch, onDelete)
+                Spacer(Modifier.weight(1f))
+                if (server.speedMbps > 0f) {
                     Text(
-                        text = "${server.speedMbps} Mbps",
-                        fontSize = 10.sp,
+                        "≈ ${"%.0f".format(server.speedMbps)} Mb/s",
+                        fontSize = 9.sp,
                         color = TextMuted
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "${server.pingMs}ms",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = PingGreen
-                    )
-                }
-
-                // Right country subtitle
-                Text(
-                    text = "${server.countryName} • سرور اختصاصی",
-                    fontSize = 10.sp,
-                    color = TextSecondary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Action Buttons Row: QR, Smart Transfer (phone), Copy, Select
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Utility Icons
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // QR Code
-                    IconButton(
-                        onClick = onShowQr,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MeelanoSurfaceElevated)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.QrCode,
-                            contentDescription = "QR Code",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    // Smart Transfer / Open Destination App (v2rayNG / V2Box)
-                    IconButton(
-                        onClick = onSmartImport,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MeelanoSurfaceElevated)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PhoneAndroid,
-                            contentDescription = "انتقال هوشمند به v2rayNG",
-                            tint = MeelanoCyan,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-
-                    // Copy Config
-                    IconButton(
-                        onClick = onCopy,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MeelanoSurfaceElevated)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "کپی کانفیگ",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                }
-
-                // Select / Active Button
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (isActive) MeelanoCyan else MeelanoSurfaceElevated)
-                        .border(
-                            width = 1.dp,
-                            color = if (isActive) MeelanoCyan else MeelanoSurfaceCardBorder,
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .clickable { onSelect() }
-                        .padding(horizontal = 18.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = if (isActive) "فعال" else "انتخاب",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isActive) Color.Black else TextPrimary
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MiniIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(tint.copy(alpha = 0.12f))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(14.dp))
+    }
+}
+
+@Composable
+private fun ActionChip(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(11.dp))
+            .background(color.copy(alpha = 0.12f))
+            .border(1.dp, color.copy(alpha = 0.3f), RoundedCornerShape(11.dp))
+            .clickable(enabled = !loading) { onClick() }
+            .padding(vertical = 9.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp),
+                    strokeWidth = 1.6.dp,
+                    color = color
+                )
+            } else {
+                Icon(icon, null, tint = color, modifier = Modifier.size(13.dp))
+            }
+            Spacer(Modifier.width(5.dp))
+            Text(text, fontSize = 10.sp, color = color, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(tab: Int, onRefresh: () -> Unit, onImport: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().fillMaxHeight(0.6f),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("🛰️", fontSize = 40.sp)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            if (tab == 1) "هنوز سروری دریافت نشده" else "لیست خالی است",
+            color = TextPrimary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (tab == 1) "با دکمه به‌روزرسانی، نودهای زنده را از اشتراک‌ها دریافت کنید"
+            else "کانفیگ شخصی خود را وارد کنید",
+            color = TextMuted,
+            fontSize = 11.sp
+        )
+        Spacer(Modifier.height(14.dp))
+        ActionChip(
+            text = if (tab == 1) "به‌روزرسانی از اشتراک‌ها" else "افزودن کانفیگ",
+            icon = if (tab == 1) Icons.Default.Refresh else Icons.Default.Add,
+            color = MeelanoGreenSuccess,
+            modifier = Modifier.width(220.dp)
+        ) { if (tab == 1) onRefresh() else onImport() }
     }
 }

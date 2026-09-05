@@ -1,8 +1,9 @@
 package com.example.ui.modals
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,170 +19,163 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.VpnServer
+import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoBgDark
-import com.example.ui.theme.MeelanoCyan
-import com.example.ui.theme.MeelanoSurfaceCard
-import com.example.ui.theme.MeelanoSurfaceCardBorder
-import com.example.ui.theme.MeelanoSurfaceElevated
+import com.example.ui.theme.MeelanoGreenSuccess
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.util.QrGenerator
 import com.example.util.SmartImportHelper
-import kotlin.math.abs
 
+/** Shows a genuine, scannable ZXing QR code of the server's share link. */
 @Composable
-fun QrCodeDialog(
-    server: VpnServer,
-    onClose: () -> Unit
-) {
+fun QrCodeDialog(server: VpnServer, onClose: () -> Unit) {
+    val accent = LocalAccent.current.primary
     val context = LocalContext.current
+    val qr = remember(server.configLink) { QrGenerator.generate(server.configLink) }
 
     Dialog(onDismissRequest = onClose) {
         Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(MeelanoBgDark)
-                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(20.dp)),
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)),
             color = MeelanoBgDark
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Top Close button & Title
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = onClose,
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MeelanoSurfaceElevated)
+                        modifier = Modifier.size(32.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.06f))
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "بستن",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Icon(Icons.Default.Close, "بستن", tint = TextSecondary, modifier = Modifier.size(16.dp))
                     }
-
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = server.name,
-                            fontSize = 14.sp,
+                            server.name,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            color = TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = server.flagEmoji, fontSize = 16.sp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(server.flagEmoji, fontSize = 16.sp)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
 
-                // High-contrast QR Container
                 Box(
                     modifier = Modifier
-                        .size(220.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .size(248.dp)
+                        .clip(RoundedCornerShape(18.dp))
                         .background(Color.White)
-                        .padding(14.dp),
+                        .border(2.dp, accent.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+                        .padding(12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Procedural QR pattern visualization for the config link
-                    Canvas(modifier = Modifier.size(192.dp)) {
-                        val matrixSize = 25
-                        val cellSize = size.width / matrixSize
-                        val hash = server.configLink.hashCode()
-
-                        for (r in 0 until matrixSize) {
-                            for (c in 0 until matrixSize) {
-                                // QR Position detection patterns (corners)
-                                val isCornerFinder =
-                                    (r < 7 && c < 7) || (r < 7 && c >= matrixSize - 7) || (r >= matrixSize - 7 && c < 7)
-                                val isInnerCorner =
-                                    (r in 1..5 && c in 1..5 && (r == 1 || r == 5 || c == 1 || c == 5 || (r in 2..4 && c in 2..4))) ||
-                                    (r in 1..5 && c >= matrixSize - 6 && (r == 1 || r == 5 || c == matrixSize - 6 || c == matrixSize - 2 || (r in 2..4 && c in matrixSize - 5..matrixSize - 3))) ||
-                                    (r >= matrixSize - 6 && c in 1..5 && (r == matrixSize - 6 || r == matrixSize - 2 || c == 1 || c == 5 || (r in matrixSize - 5..matrixSize - 3 && c in 2..4)))
-
-                                val shouldDraw = if (isCornerFinder) {
-                                    isInnerCorner
-                                } else {
-                                    ((abs((r * 31 + c * 17) xor hash) % 3) == 0)
-                                }
-
-                                if (shouldDraw) {
-                                    drawRect(
-                                        color = Color.Black,
-                                        topLeft = Offset(c * cellSize, r * cellSize),
-                                        size = Size(cellSize - 0.5f, cellSize - 0.5f)
-                                    )
-                                }
-                            }
-                        }
+                    if (qr != null) {
+                        Image(
+                            bitmap = qr,
+                            contentDescription = "QR کانفیگ",
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text("خطا در تولید QR", color = Color.Black, fontSize = 12.sp)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(Modifier.height(14.dp))
 
                 Text(
-                    text = "جهت اتصال در آیفون یا کامپیوتر اسکن کنید",
-                    fontSize = 12.sp,
-                    color = TextSecondary
+                    server.hostLabel,
+                    fontSize = 11.sp,
+                    color = TextSecondary,
+                    fontWeight = FontWeight.SemiBold
                 )
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Button(
-                    onClick = {
-                        SmartImportHelper.copyToClipboard(context, server.configLink)
-                        onClose()
-                    },
+                Spacer(Modifier.height(8.dp))
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MeelanoCyan,
-                        contentColor = Color.Black
-                    )
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White.copy(alpha = 0.04f))
+                        .padding(9.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                    Text(
+                        server.configLink,
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = TextMuted,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "کپی کانفیگ V2Ray", fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(Modifier.height(14.dp))
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    QrAction("کپی", Icons.Default.ContentCopy, accent, Modifier.weight(1f)) {
+                        SmartImportHelper.copyToClipboard(context, server.configLink)
+                    }
+                    QrAction("ارسال به کلاینت", Icons.Default.Send, MeelanoGreenSuccess, Modifier.weight(1f)) {
+                        SmartImportHelper.openInDestinationApp(context, server.configLink)
+                    }
+                    QrAction("اشتراک", Icons.Default.Share, TextSecondary, Modifier.weight(1f)) {
+                        SmartImportHelper.shareConfig(context, server.configLink)
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun QrAction(
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(color.copy(alpha = 0.12f))
+            .clickable { onClick() }
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, null, tint = color, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(label, fontSize = 9.sp, color = color, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }

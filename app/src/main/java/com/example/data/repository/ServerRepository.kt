@@ -1,400 +1,410 @@
 package com.example.data.repository
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import com.example.core.ConfigParser
+import com.example.core.PingTester
+import com.example.core.Protocol
+import com.example.core.ProxyEndpoint
 import com.example.data.model.BypassApp
+import com.example.data.model.ServerSort
 import com.example.data.model.VpnServer
+import com.example.data.settings.SettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.InetSocketAddress
-import java.net.Socket
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import kotlin.random.Random
 
-class ServerRepository(private val context: Context) {
+/**
+ * Owns every server list in the app.
+ *
+ * Free nodes come from real GitHub subscription URLs, are parsed with
+ * [ConfigParser], TCP-pinged with [PingTester], deduplicated, geo-labelled and
+ * only the fastest *reachable* ones survive. Custom nodes the user imports and
+ * all favourites/selection state are persisted through [SettingsStore].
+ */
+class ServerRepository(
+    private val context: Context,
+    private val settings: SettingsStore
+) {
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
-    // Default VIP servers directly mirroring the app UI screenshots
-    private val defaultVipServers = listOf(
-        VpnServer(
-            id = "vip_1",
-            name = "MeeLano-VIP1 DarkNet Pro 🎮 [18.08GB|29D]",
-            countryName = "آلمان (فرانکفورت)",
-            flagEmoji = "🇩🇪",
-            protocol = "VMess",
-            isVip = true,
-            pingMs = 48,
-            speedMbps = 248.5f,
-            configLink = "vmess://eyJhZGQiOiJkZS5tZWVsYW5vLnBybyIsInBvcnQiOjQ0MywiaWQiOiI3N2ExZjIwMC02YjAwLTQ1MDctYTRjMy02ZTI1OGE4YzU5NzQiLCJhaWQiOjAsInNjeSI6ImF1dG8iLCJuZXQiOiJ3cyIsInRscyI6InRscyIsInBhdGgiOiIvbWVlbGFubyIsInBzIjoiTWVlTGFuby1WSVAxIERhcmtOZXQgUHJvIn0=",
-            isSelected = true,
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
-        ),
-        VpnServer(
-            id = "vip_2",
-            name = "MeeLano-VIP2 Frankfurt 🇩🇪 [Reality]",
-            countryName = "آلمان (فرانکفورت)",
-            flagEmoji = "🇩🇪",
-            protocol = "Reality",
-            isVip = true,
-            pingMs = 78,
-            speedMbps = 185.4f,
-            configLink = "vless://96b1e600-4b31-482a-a92c-567a123bcdef@de2.meelano.pro:443?encryption=none&security=reality&sni=yahoo.com&fp=chrome&pbk=Z93-abcdef1234567890&sid=6ba7b810&type=grpc&serviceName=meelano-grpc#MeeLano-VIP2%20Frankfurt",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
-        ),
-        VpnServer(
-            id = "vip_3",
-            name = "MeeLano-VIP2 Helsinki 🇫🇮 [Hysteria 2]",
-            countryName = "فنلاند (هلسینکی)",
-            flagEmoji = "🇫🇮",
-            protocol = "Hysteria 2",
-            isVip = true,
-            pingMs = 89,
-            speedMbps = 210.0f,
-            configLink = "hy2://meelano_vip_user:secretPass123@fi.meelano.pro:443?sni=speedtest.net&insecure=0#MeeLano-VIP2%20Helsinki",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
-        ),
-        VpnServer(
-            id = "vip_4",
-            name = "MeeLano-VIP3 Amsterdam 🇳🇱 [VLESS Reality]",
-            countryName = "هلند (آمستردام)",
-            flagEmoji = "🇳🇱",
-            protocol = "VLESS",
-            isVip = true,
-            pingMs = 94,
-            speedMbps = 168.2f,
-            configLink = "vless://4422e111-9988-4507-b6d2-334455667788@nl.meelano.pro:443?security=reality&sni=speedtest.net&fp=chrome&type=tcp#MeeLano-VIP3%20Amsterdam",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
-        ),
-        VpnServer(
-            id = "vip_5",
-            name = "MeeLano-VIP4 Istanbul 🇹🇷 [Hysteria 2]",
-            countryName = "ترکیه (استانبول)",
-            flagEmoji = "🇹🇷",
-            protocol = "Hysteria 2",
-            isVip = true,
-            pingMs = 54,
-            speedMbps = 220.5f,
-            configLink = "hy2://meelano_tr:secPassTr@tr.meelano.pro:443?sni=cloud.google.com#MeeLano-VIP4%20Istanbul",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
-        ),
-        VpnServer(
-            id = "vip_6",
-            name = "MeeLano-VIP5 London 🇬🇧 [Reality]",
-            countryName = "انگلستان (لندن)",
-            flagEmoji = "🇬🇧",
-            protocol = "Reality",
-            isVip = true,
-            pingMs = 82,
-            speedMbps = 195.0f,
-            configLink = "vless://11223344-5566-7788-99aa-bbccddeeff00@uk.meelano.pro:443?security=reality&sni=microsoft.com#MeeLano-VIP5%20London",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
-        ),
-        VpnServer(
-            id = "vip_7",
-            name = "MeeLano-VIP6 Stockholm 🇸🇪 [VLESS]",
-            countryName = "سوئد (استکهلم)",
-            flagEmoji = "🇸🇪",
-            protocol = "VLESS",
-            isVip = true,
-            pingMs = 99,
-            speedMbps = 175.0f,
-            configLink = "vless://aabbccdd-1122-3344-5566-778899aabbcc@se.meelano.pro:443?security=tls&sni=apple.com#MeeLano-VIP6%20Stockholm",
-            dataRemainingGb = 18.08f,
-            daysRemaining = 29
-        )
-    )
-
-    // Initial 10 Free GitHub servers (matching Screenshot 4)
-    private val defaultFreeServers = listOf(
-        VpnServer(
-            id = "free_1",
-            name = "Meelano-Free1 🇫🇮",
-            countryName = "فنلاند",
-            flagEmoji = "🇫🇮",
-            protocol = "Hysteria 2",
-            isVip = false,
-            pingMs = 79,
-            speedMbps = 59.0f,
-            configLink = "hy2://public_free1:pass@fi.nodes.v2free.net:443#Meelano-Free1"
-        ),
-        VpnServer(
-            id = "free_2",
-            name = "Meelano-Free2 🇳🇱",
-            countryName = "هلند",
-            flagEmoji = "🇳🇱",
-            protocol = "Reality",
-            isVip = false,
-            pingMs = 84,
-            speedMbps = 92.0f,
-            configLink = "vless://free2@nl.nodes.v2free.net:443?security=reality&sni=speedtest.net#Meelano-Free2"
-        ),
-        VpnServer(
-            id = "free_3",
-            name = "Meelano-Free3 🇹🇷",
-            countryName = "ترکیه",
-            flagEmoji = "🇹🇷",
-            protocol = "Reality",
-            isVip = false,
-            pingMs = 87,
-            speedMbps = 47.0f,
-            configLink = "vless://free3@tr.nodes.v2free.net:443?security=reality&sni=speedtest.net#Meelano-Free3"
-        ),
-        VpnServer(
-            id = "free_4",
-            name = "Meelano-Free4 🇬🇧",
-            countryName = "انگلستان",
-            flagEmoji = "🇬🇧",
-            protocol = "Hysteria 2",
-            isVip = false,
-            pingMs = 94,
-            speedMbps = 96.0f,
-            configLink = "hy2://free4@uk.nodes.v2free.net:443#Meelano-Free4"
-        ),
-        VpnServer(
-            id = "free_5",
-            name = "Meelano-Free5 🇸🇪",
-            countryName = "سوئد",
-            flagEmoji = "🇸🇪",
-            protocol = "VLESS",
-            isVip = false,
-            pingMs = 112,
-            speedMbps = 42.0f,
-            configLink = "vless://free5@se.nodes.v2free.net:443#Meelano-Free5"
-        ),
-        VpnServer(
-            id = "free_6",
-            name = "Meelano-Free6 🇩🇪",
-            countryName = "آلمان",
-            flagEmoji = "🇩🇪",
-            protocol = "VMess",
-            isVip = false,
-            pingMs = 118,
-            speedMbps = 55.0f,
-            configLink = "vmess://eyJhZGQiOiJkZS5mcmVlLm5ldCIsInBvcnQiOjQ0MywicHMiOiJNZWVsYW5vLUZyZWU2In0="
-        ),
-        VpnServer(
-            id = "free_7",
-            name = "Meelano-Free7 🇫🇷",
-            countryName = "فرانسه",
-            flagEmoji = "🇫🇷",
-            protocol = "VLESS",
-            isVip = false,
-            pingMs = 125,
-            speedMbps = 38.0f,
-            configLink = "vless://free7@fr.nodes.v2free.net:443#Meelano-Free7"
-        ),
-        VpnServer(
-            id = "free_8",
-            name = "Meelano-Free8 🇨🇭",
-            countryName = "سوئیس",
-            flagEmoji = "🇨🇭",
-            protocol = "Reality",
-            isVip = false,
-            pingMs = 132,
-            speedMbps = 49.0f,
-            configLink = "vless://free8@ch.nodes.v2free.net:443?security=reality#Meelano-Free8"
-        ),
-        VpnServer(
-            id = "free_9",
-            name = "Meelano-Free9 🇦🇹",
-            countryName = "اتریش",
-            flagEmoji = "🇦🇹",
-            protocol = "Hysteria 2",
-            isVip = false,
-            pingMs = 139,
-            speedMbps = 62.0f,
-            configLink = "hy2://free9@at.nodes.v2free.net:443#Meelano-Free9"
-        ),
-        VpnServer(
-            id = "free_10",
-            name = "Meelano-Free10 🇵🇱",
-            countryName = "لهستان",
-            flagEmoji = "🇵🇱",
-            protocol = "VMess",
-            isVip = false,
-            pingMs = 145,
-            speedMbps = 34.0f,
-            configLink = "vmess://eyJhZGQiOiJwbC5mcmVlLm5ldCIsInBvcnQiOjQ0MywicHMiOiJNZWVsYW5vLUZyZWUxMCJ9"
-        )
-    )
-
-    private val _vipServers = MutableStateFlow<List<VpnServer>>(defaultVipServers)
+    private val _vipServers = MutableStateFlow(BundledServers.vip)
     val vipServers: StateFlow<List<VpnServer>> = _vipServers.asStateFlow()
 
-    private val _freeServers = MutableStateFlow<List<VpnServer>>(defaultFreeServers)
+    private val _freeServers = MutableStateFlow<List<VpnServer>>(emptyList())
     val freeServers: StateFlow<List<VpnServer>> = _freeServers.asStateFlow()
 
-    private val _activeServer = MutableStateFlow<VpnServer>(defaultVipServers.first())
+    private val _customServers = MutableStateFlow<List<VpnServer>>(emptyList())
+    val customServers: StateFlow<List<VpnServer>> = _customServers.asStateFlow()
+
+    private val _activeServer = MutableStateFlow(BundledServers.vip.first())
     val activeServer: StateFlow<VpnServer> = _activeServer.asStateFlow()
 
-    private val _bypassApps = MutableStateFlow<List<BypassApp>>(listOf(
-        BypassApp("com.bmi.mobilebank", "همراه‌بانک ملی ایران (BAM)", "بانکی و مالی", true),
-        BypassApp("ir.tejaratbank.mobilebank", "همراه‌بانک تجارت", "بانکی و مالی", true),
-        BypassApp("com.mellat.mobilebank", "همراه‌بانک ملت (سکه)", "بانکی و مالی", true),
-        BypassApp("com.sep.sepapp", "هفت‌هشتاد (۷۸۰) / آپ", "پرداخت و تراکنش", true),
-        BypassApp("cab.snapp.passenger", "اسنپ (Snapp)", "تاکسی اینترنتی و خدمات", true),
-        BypassApp("taxi.tap30.passenger", "تپسی (Tapsi)", "حمل و نقل شهری", true),
-        BypassApp("ir.divar", "دیوار (Divar)", "خدمات و نیازمندی‌ها", false),
-        BypassApp("com.digikala", "دیجی‌کالا (Digikala)", "فروشگاه آنلاین", false)
-    ))
+    private val _bypassApps = MutableStateFlow<List<BypassApp>>(emptyList())
     val bypassApps: StateFlow<List<BypassApp>> = _bypassApps.asStateFlow()
 
-    fun selectServer(server: VpnServer) {
-        val updatedVip = _vipServers.value.map { it.copy(isSelected = it.id == server.id) }
-        val updatedFree = _freeServers.value.map { it.copy(isSelected = it.id == server.id) }
-        _vipServers.value = updatedVip
-        _freeServers.value = updatedFree
+    private val _updateProgress = MutableStateFlow<UpdateProgress?>(null)
+    val updateProgress: StateFlow<UpdateProgress?> = _updateProgress.asStateFlow()
+
+    data class UpdateProgress(val stage: String, val done: Int, val total: Int) {
+        val fraction: Float get() = if (total <= 0) 0f else done.toFloat() / total
+    }
+
+    // region bootstrap / persistence
+
+    suspend fun restore() {
+        val favorites = settings.favorites.first()
+        _customServers.value = decodeServers(settings.customServers.first(), isVip = false)
+            .map { it.copy(isFavorite = it.id in favorites) }
+        _freeServers.value = decodeServers(settings.cachedFreeServers.first(), isVip = false)
+            .map { it.copy(isFavorite = it.id in favorites) }
+        _vipServers.value = _vipServers.value.map { it.copy(isFavorite = it.id in favorites) }
+
+        val selectedId = settings.selectedServerId.first()
+        allServers().firstOrNull { it.id == selectedId }?.let { selectServerInternal(it) }
+        loadInstalledApps()
+    }
+
+    fun allServers(): List<VpnServer> = _vipServers.value + _customServers.value + _freeServers.value
+
+    suspend fun selectServer(server: VpnServer) {
+        selectServerInternal(server)
+        settings.setSelectedServerId(server.id)
+    }
+
+    private fun selectServerInternal(server: VpnServer) {
+        _vipServers.value = _vipServers.value.map { it.copy(isSelected = it.id == server.id) }
+        _freeServers.value = _freeServers.value.map { it.copy(isSelected = it.id == server.id) }
+        _customServers.value = _customServers.value.map { it.copy(isSelected = it.id == server.id) }
         _activeServer.value = server.copy(isSelected = true)
     }
 
-    suspend fun testAllPings(isVipTab: Boolean): Unit = withContext(Dispatchers.IO) {
-        val targetList = if (isVipTab) _vipServers.value else _freeServers.value
-        val tested = targetList.map { server ->
-            val measuredPing = measureRealPing(server.id)
-            val jitterSpeed = server.speedMbps + (Random.nextFloat() * 10f - 5f)
-            server.copy(
-                pingMs = measuredPing,
-                speedMbps = jitterSpeed.coerceAtLeast(10.0f)
-            )
-        }
-        if (isVipTab) {
-            _vipServers.value = tested
-        } else {
-            _freeServers.value = tested
-        }
-        if (targetList.any { it.id == _activeServer.value.id }) {
-            tested.find { it.id == _activeServer.value.id }?.let {
-                _activeServer.value = it
-            }
-        }
+    suspend fun toggleFavorite(server: VpnServer) {
+        val current = settings.favorites.first().toMutableSet()
+        if (!current.add(server.id)) current.remove(server.id)
+        settings.setFavorites(current)
+        val mark: (VpnServer) -> VpnServer = { it.copy(isFavorite = it.id in current) }
+        _vipServers.value = _vipServers.value.map(mark)
+        _freeServers.value = _freeServers.value.map(mark)
+        _customServers.value = _customServers.value.map(mark)
+        _activeServer.value = mark(_activeServer.value)
     }
 
-    fun sortByLowestPing(isVipTab: Boolean) {
-        if (isVipTab) {
-            _vipServers.value = _vipServers.value.sortedBy { it.pingMs }
-        } else {
-            _freeServers.value = _freeServers.value.sortedBy { it.pingMs }
+    // endregion
+
+    // region ping
+
+    /** Real TCP ping over every server in the given tab; dead nodes are marked. */
+    suspend fun testPings(scope: ServerScope) {
+        val list = listFor(scope)
+        if (list.isEmpty()) return
+        _updateProgress.value = UpdateProgress("در حال تست پینگ…", 0, list.size)
+
+        val results = PingTester.pingAll(
+            items = list,
+            keyOf = { it.id },
+            addressOf = { server -> server.endpoint?.let { it.host to it.port } }
+        )
+        val now = System.currentTimeMillis()
+        val updated = list.map { server ->
+            val latency = results[server.id] ?: PingTester.UNREACHABLE
+            server.copy(
+                pingMs = latency,
+                lastTestedAt = now,
+                speedMbps = estimateThroughput(latency)
+            )
         }
+        setList(scope, updated)
+        updated.firstOrNull { it.id == _activeServer.value.id }?.let { _activeServer.value = it }
+        _updateProgress.value = null
     }
+
+    /** Returns the fastest reachable server across all lists, or null. */
+    suspend fun fastestServer(): VpnServer? {
+        val candidates = allServers()
+        if (candidates.isEmpty()) return null
+        val results = PingTester.pingAll(
+            items = candidates,
+            keyOf = { it.id },
+            addressOf = { s -> s.endpoint?.let { it.host to it.port } }
+        )
+        return candidates
+            .map { it.copy(pingMs = results[it.id] ?: PingTester.UNREACHABLE) }
+            .filter { it.isReachable }
+            .minByOrNull { it.pingMs }
+    }
+
+    private fun estimateThroughput(latencyMs: Int): Float = when {
+        latencyMs <= 0 -> 0f
+        latencyMs < 60 -> 240f - latencyMs
+        latencyMs < 120 -> 180f - latencyMs
+        latencyMs < 250 -> 120f - latencyMs / 2f
+        else -> (60f - latencyMs / 10f).coerceAtLeast(1f)
+    }
+
+    // endregion
+
+    // region subscriptions
 
     /**
-     * Requirement:
-     * Auto fetch public V2Ray subscription links from reputable GitHub repositories (e.g., ~50 servers).
-     * Ping test automatically, filter out the top 10 best servers, discard slow/dead nodes,
-     * categorize by country, format standard names e.g., Meelano-Free1 🇫🇮.
-     * Smart bypass: If GitHub is blocked, automatically routes request through VIP tunnel.
+     * Downloads every configured subscription, parses all links, pings them in
+     * parallel and keeps the [keep] fastest live nodes. Returns a failure only
+     * when nothing at all could be fetched or resolved.
      */
-    suspend fun updateFreeServersFromGitHub(): Result<List<VpnServer>> = withContext(Dispatchers.IO) {
+    suspend fun refreshFreeServers(keep: Int = 20): Result<List<VpnServer>> = withContext(Dispatchers.IO) {
         try {
-            // Reputable public Iran-compatible repositories
-            val githubSources = listOf(
-                "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Sub1.txt",
-                "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/mix",
-                "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_list.txt"
-            )
+            val sources = settings.subscriptions.first().toList()
+            _updateProgress.value = UpdateProgress("دریافت اشتراک‌ها…", 0, sources.size)
 
-            var rawBody: String? = null
-            // Attempt direct fetch, or simulate resilient VIP proxy tunnel if blocked
-            for (url in githubSources) {
-                try {
-                    val request = Request.Builder().url(url).build()
-                    val response = httpClient.newCall(request).execute()
-                    if (response.isSuccessful) {
+            val endpoints = LinkedHashMap<String, ProxyEndpoint>()
+            sources.forEachIndexed { index, url ->
+                runCatching {
+                    httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
                         val body = response.body?.string()
-                        if (!body.isNullOrBlank()) {
-                            rawBody = body
-                            break
+                        if (response.isSuccessful && !body.isNullOrBlank()) {
+                            ConfigParser.parseSubscription(body).forEach { endpoint ->
+                                endpoints.putIfAbsent("${endpoint.host}:${endpoint.port}", endpoint)
+                            }
                         }
                     }
-                } catch (_: Exception) {
-                    // Smart Bypass via VIP route fallback
                 }
+                _updateProgress.value = UpdateProgress("دریافت اشتراک‌ها…", index + 1, sources.size)
             }
 
-            val countryPool = listOf(
-                Pair("فنلاند", "🇫🇮"),
-                Pair("هلند", "🇳🇱"),
-                Pair("ترکیه", "🇹🇷"),
-                Pair("انگلستان", "🇬🇧"),
-                Pair("سوئد", "🇸🇪"),
-                Pair("آلمان", "🇩🇪"),
-                Pair("فرانسه", "🇫🇷"),
-                Pair("سوئیس", "🇨🇭"),
-                Pair("اتریش", "🇦🇹"),
-                Pair("لهستان", "🇵🇱"),
-                Pair("کانادا", "🇨🇦"),
-                Pair("ایتالیا", "🇮🇹")
+            if (endpoints.isEmpty()) {
+                _updateProgress.value = null
+                return@withContext Result.failure(
+                    IllegalStateException("هیچ نودی دریافت نشد؛ دسترسی به GitHub برقرار نیست")
+                )
+            }
+
+            val candidates = endpoints.values.toList().take(220)
+            _updateProgress.value = UpdateProgress("تست پینگ ${candidates.size} نود…", 0, candidates.size)
+            val latencies = PingTester.pingAll(
+                items = candidates,
+                parallelism = 24,
+                timeoutMs = 1800,
+                keyOf = { "${it.host}:${it.port}" },
+                addressOf = { it.host to it.port }
             )
-            val protocols = listOf("Hysteria 2", "Reality", "VLESS", "VMess")
+            _updateProgress.value = UpdateProgress("انتخاب بهترین نودها…", candidates.size, candidates.size)
 
-            // Generate/parse up to 50 servers, test pings, select top 10
-            val candidates = mutableListOf<VpnServer>()
-            for (i in 1..40) {
-                val country = countryPool[i % countryPool.size]
-                val proto = protocols[i % protocols.size]
-                val simulatedPing = Random.nextInt(55, 290)
-                val simulatedSpeed = Random.nextFloat() * 80f + 25f
-                candidates.add(
-                    VpnServer(
-                        id = "gh_node_$i",
-                        name = "Node-$i",
-                        countryName = country.first,
-                        flagEmoji = country.second,
-                        protocol = proto,
-                        isVip = false,
-                        pingMs = simulatedPing,
-                        speedMbps = simulatedSpeed,
-                        configLink = "vless://meelano-gh-$i@node-$i.meelano.free:443?security=reality#Node-$i"
-                    )
+            val alive = candidates
+                .mapNotNull { endpoint ->
+                    val latency = latencies["${endpoint.host}:${endpoint.port}"] ?: PingTester.UNREACHABLE
+                    if (latency <= 0) null else endpoint to latency
+                }
+                .sortedBy { it.second }
+                .take(keep)
+
+            if (alive.isEmpty()) {
+                _updateProgress.value = null
+                return@withContext Result.failure(
+                    IllegalStateException("همه نودهای دریافتی در دسترس نبودند")
                 )
             }
 
-            // Filter top 10 lowest ping and format standard naming
-            val top10 = candidates.sortedBy { it.pingMs }.take(10).mapIndexed { index, node ->
-                node.copy(
-                    id = "meelano_free_${index + 1}",
-                    name = "Meelano-Free${index + 1} ${node.flagEmoji}"
+            val favorites = settings.favorites.first()
+            val now = System.currentTimeMillis()
+            val servers = alive.mapIndexed { index, (endpoint, latency) ->
+                val geo = GeoLabeler.of(endpoint.host, endpoint.remark)
+                val id = "free_${endpoint.host}_${endpoint.port}"
+                VpnServer(
+                    id = id,
+                    name = "Meelano-Free${index + 1} ${geo.flag}",
+                    countryName = geo.country,
+                    flagEmoji = geo.flag,
+                    protocol = endpoint.displayProtocol,
+                    isVip = false,
+                    pingMs = latency,
+                    speedMbps = estimateThroughput(latency),
+                    configLink = endpoint.raw,
+                    isFavorite = id in favorites,
+                    lastTestedAt = now
                 )
             }
 
-            _freeServers.value = top10
-            Result.success(top10)
+            _freeServers.value = servers
+            settings.setCachedFreeServers(encodeServers(servers))
+            _updateProgress.value = null
+            Result.success(servers)
         } catch (e: Exception) {
+            _updateProgress.value = null
             Result.failure(e)
         }
     }
 
-    private fun measureRealPing(serverId: String): Int {
-        return try {
-            val start = System.currentTimeMillis()
-            val socket = Socket()
-            // Test reachability to public DNS or sample node
-            socket.connect(InetSocketAddress("8.8.8.8", 53), 300)
-            val latency = (System.currentTimeMillis() - start).toInt()
-            socket.close()
-            latency.coerceIn(35, 120)
-        } catch (_: Exception) {
-            Random.nextInt(45, 95)
+    suspend fun addSubscription(url: String): Boolean {
+        if (!url.startsWith("http")) return false
+        settings.setSubscriptions(settings.subscriptions.first() + url)
+        return true
+    }
+
+    suspend fun removeSubscription(url: String) {
+        settings.setSubscriptions(settings.subscriptions.first() - url)
+    }
+
+    // endregion
+
+    // region manual import
+
+    /** Imports one or many config links (or a whole subscription blob) pasted by the user. */
+    suspend fun importConfigs(payload: String): Int {
+        val endpoints = ConfigParser.parseSubscription(payload).ifEmpty {
+            listOfNotNull(ConfigParser.parse(payload))
+        }
+        if (endpoints.isEmpty()) return 0
+
+        val existing = _customServers.value.associateBy { it.id }.toMutableMap()
+        endpoints.forEach { endpoint ->
+            val geo = GeoLabeler.of(endpoint.host, endpoint.remark)
+            val id = "custom_${endpoint.host}_${endpoint.port}"
+            existing[id] = VpnServer(
+                id = id,
+                name = endpoint.remark.ifBlank { "${geo.country} · ${endpoint.displayProtocol}" },
+                countryName = geo.country,
+                flagEmoji = geo.flag,
+                protocol = endpoint.displayProtocol,
+                isVip = false,
+                pingMs = 0,
+                speedMbps = 0f,
+                configLink = endpoint.raw
+            )
+        }
+        val merged = existing.values.toList()
+        _customServers.value = merged
+        settings.setCustomServers(encodeServers(merged))
+        return endpoints.size
+    }
+
+    suspend fun deleteCustomServer(server: VpnServer) {
+        val remaining = _customServers.value.filterNot { it.id == server.id }
+        _customServers.value = remaining
+        settings.setCustomServers(encodeServers(remaining))
+    }
+
+    // endregion
+
+    // region split tunnelling
+
+    /** Reads the real launchable app list off the device for the split-tunnel screen. */
+    suspend fun loadInstalledApps() = withContext(Dispatchers.IO) {
+        val pm = context.packageManager
+        val bypassed = settings.bypassPackages.first()
+        val apps = runCatching {
+            pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                .map { info ->
+                    val isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    BypassApp(
+                        packageName = info.packageName,
+                        appName = pm.getApplicationLabel(info).toString(),
+                        category = KnownApps.categoryOf(info.packageName, isSystem),
+                        isBypassed = info.packageName in bypassed,
+                        isSystemApp = isSystem
+                    )
+                }
+                .sortedWith(compareByDescending<BypassApp> { it.isBypassed }.thenBy { it.appName })
+        }.getOrDefault(emptyList())
+
+        _bypassApps.value = if (apps.isEmpty()) KnownApps.fallback(bypassed) else apps
+    }
+
+    suspend fun toggleBypassApp(packageName: String) {
+        val current = settings.bypassPackages.first().toMutableSet()
+        if (!current.add(packageName)) current.remove(packageName)
+        settings.setBypassPackages(current)
+        _bypassApps.value = _bypassApps.value.map {
+            if (it.packageName == packageName) it.copy(isBypassed = packageName in current) else it
         }
     }
 
-    fun toggleBypassApp(packageName: String) {
-        _bypassApps.value = _bypassApps.value.map {
-            if (it.packageName == packageName) it.copy(isBypassed = !it.isBypassed) else it
+    // endregion
+
+    fun sorted(list: List<VpnServer>, sort: ServerSort): List<VpnServer> = when (sort) {
+        ServerSort.PING -> list.sortedWith(
+            compareByDescending<VpnServer> { it.isFavorite }
+                .thenBy { if (it.isReachable) 0 else 1 }
+                .thenBy { if (it.isReachable) it.pingMs else Int.MAX_VALUE }
+        )
+        ServerSort.SPEED -> list.sortedByDescending { it.speedMbps }
+        ServerSort.NAME -> list.sortedBy { it.name }
+        ServerSort.COUNTRY -> list.sortedBy { it.countryName }
+    }
+
+    enum class ServerScope { VIP, FREE, CUSTOM }
+
+    private fun listFor(scope: ServerScope) = when (scope) {
+        ServerScope.VIP -> _vipServers.value
+        ServerScope.FREE -> _freeServers.value
+        ServerScope.CUSTOM -> _customServers.value
+    }
+
+    private fun setList(scope: ServerScope, value: List<VpnServer>) {
+        when (scope) {
+            ServerScope.VIP -> _vipServers.value = value
+            ServerScope.FREE -> _freeServers.value = value
+            ServerScope.CUSTOM -> _customServers.value = value
         }
     }
+
+    // region (de)serialisation
+
+    private fun encodeServers(servers: List<VpnServer>): String {
+        val array = JSONArray()
+        servers.forEach { server ->
+            array.put(
+                JSONObject().apply {
+                    put("id", server.id)
+                    put("name", server.name)
+                    put("country", server.countryName)
+                    put("flag", server.flagEmoji)
+                    put("protocol", server.protocol)
+                    put("ping", server.pingMs)
+                    put("speed", server.speedMbps.toDouble())
+                    put("link", server.configLink)
+                    put("testedAt", server.lastTestedAt)
+                }
+            )
+        }
+        return array.toString()
+    }
+
+    private fun decodeServers(json: String, isVip: Boolean): List<VpnServer> {
+        if (json.isBlank()) return emptyList()
+        return runCatching {
+            val array = JSONArray(json)
+            (0 until array.length()).map { index ->
+                val obj = array.getJSONObject(index)
+                VpnServer(
+                    id = obj.getString("id"),
+                    name = obj.getString("name"),
+                    countryName = obj.optString("country"),
+                    flagEmoji = obj.optString("flag", "🌐"),
+                    protocol = obj.optString("protocol", Protocol.VLESS.label),
+                    isVip = isVip,
+                    pingMs = obj.optInt("ping", 0),
+                    speedMbps = obj.optDouble("speed", 0.0).toFloat(),
+                    configLink = obj.getString("link"),
+                    lastTestedAt = obj.optLong("testedAt", 0L)
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    // endregion
 }

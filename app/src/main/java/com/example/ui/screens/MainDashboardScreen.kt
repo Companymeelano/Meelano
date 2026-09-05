@@ -1,14 +1,13 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,34 +19,42 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Router
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,14 +62,29 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.widget.Toast
+import com.example.data.model.ConnectionQuality
+import com.example.data.repository.ServerRepository
+import com.example.ui.components.AuroraBackground
+import com.example.ui.components.ConnectionRadar
+import com.example.ui.components.GlassCard
+import com.example.ui.components.HealthRing
 import com.example.ui.components.MeelanoHexagonLogo
+import com.example.ui.components.Pill
 import com.example.ui.components.PowerButton3D
+import com.example.ui.components.SignalBars
+import com.example.ui.components.StatTile
 import com.example.ui.components.TrafficLineChart
+import com.example.ui.modals.ImportConfigDialog
 import com.example.ui.modals.LiveLogConsoleDialog
 import com.example.ui.modals.QrCodeDialog
 import com.example.ui.modals.SecurityLockScreen
@@ -70,840 +92,842 @@ import com.example.ui.modals.ServerListModal
 import com.example.ui.modals.SettingsModal
 import com.example.ui.modals.SmartImportFallbackDialog
 import com.example.ui.modals.SplitTunnelingDialog
-import com.example.ui.theme.MeelanoBgDark
-import com.example.ui.theme.MeelanoBgDarkSecondary
-import com.example.ui.theme.MeelanoCyan
+import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoGoldVip
 import com.example.ui.theme.MeelanoGreenSuccess
 import com.example.ui.theme.MeelanoPurpleActive
-import com.example.ui.theme.MeelanoPurpleDeep
-import com.example.ui.theme.MeelanoSurfaceCard
-import com.example.ui.theme.MeelanoSurfaceCardBorder
-import com.example.ui.theme.MeelanoSurfaceElevated
-import com.example.ui.theme.PingGreen
+import com.example.ui.theme.MeelanoRedKillSwitch
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
+import com.example.ui.theme.pingColor
 import com.example.ui.viewmodel.MainViewModel
 import com.example.vpn.VpnConnectionState
 
 @Composable
 fun MainDashboardScreen(
     viewModel: MainViewModel,
-    onRequestVpnPermission: () -> Unit
+    onRequestVpnPermission: () -> Unit,
+    onRequestBiometric: (onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val accentPreset = LocalAccent.current
+    val accent = accentPreset.primary
     val scrollState = rememberScrollState()
 
-    val connectionState by viewModel.connectionState.collectAsState()
-    val liveStats by viewModel.liveStats.collectAsState()
-    val activeServer by viewModel.activeServer.collectAsState()
-    val vipServers by viewModel.vipServers.collectAsState()
-    val freeServers by viewModel.freeServers.collectAsState()
-    val routingMode by viewModel.routingMode.collectAsState()
-    val protocolFilter by viewModel.coreProtocolFilter.collectAsState()
-    val killSwitchEnabled by viewModel.killSwitchEnabled.collectAsState()
-    val smartFailoverEnabled by viewModel.smartFailoverEnabled.collectAsState()
-    val dashboardTab by viewModel.dashboardTab.collectAsState()
-    val bypassApps by viewModel.bypassApps.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val liveStats by viewModel.liveStats.collectAsStateWithLifecycle()
+    val activeServer by viewModel.activeServer.collectAsStateWithLifecycle()
+    val routingMode by viewModel.routingMode.collectAsStateWithLifecycle()
+    val killSwitchEnabled by viewModel.killSwitchEnabled.collectAsStateWithLifecycle()
+    val dashboardTab by viewModel.dashboardTab.collectAsStateWithLifecycle()
+    val isSoundMuted by viewModel.isSoundMuted.collectAsStateWithLifecycle()
+    val hapticsEnabled by viewModel.hapticsEnabled.collectAsStateWithLifecycle()
+    val lastError by viewModel.lastError.collectAsStateWithLifecycle()
+    val toast by viewModel.toast.collectAsStateWithLifecycle()
+    val isLocked by viewModel.securityManager.isLocked.collectAsStateWithLifecycle()
 
-    val isServersModalOpen by viewModel.isServersModalOpen.collectAsState()
-    val isSettingsModalOpen by viewModel.isSettingsModalOpen.collectAsState()
-    val isLogsConsoleOpen by viewModel.isLogsConsoleOpen.collectAsState()
-    val isSplitTunnelingOpen by viewModel.isSplitTunnelingOpen.collectAsState()
-    val selectedServerForQr by viewModel.selectedServerForQr.collectAsState()
-    val smartImportFallbackOpen by viewModel.smartImportFallbackOpen.collectAsState()
-    val isSoundMuted by viewModel.isSoundMuted.collectAsState()
+    val isConnected = connectionState == VpnConnectionState.CONNECTED
 
-    val isLocked by viewModel.securityManager.isLocked.collectAsState()
-    val currentPin by viewModel.securityManager.currentPinInput.collectAsState()
-    val pinError by viewModel.securityManager.pinError.collectAsState()
+    LaunchedEffect(toast) {
+        toast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.consumeToast()
+        }
+    }
 
-    val isTestingPing by viewModel.isTestingPing.collectAsState()
-    val isUpdatingGitHub by viewModel.isUpdatingGitHub.collectAsState()
-    val logs by viewModel.logs.collectAsState()
-
-    val infiniteTransition = rememberInfiniteTransition(label = "pulseDot")
-    val dotAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "dotAlpha"
-    )
-
-    Scaffold(
-        containerColor = MeelanoBgDark
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(MeelanoBgDark, Color(0xFF091222), MeelanoBgDarkSecondary)
-                    )
-                )
+    Scaffold(containerColor = Color.Transparent) { paddingValues ->
+        AuroraBackground(
+            accent = accent,
+            secondary = accentPreset.secondary,
+            energised = isConnected,
+            modifier = Modifier.fillMaxSize()
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(paddingValues)
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
                     .verticalScroll(scrollState)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // ==========================================
-                // 1. TOP APP BAR (Lock, Mute, VIP badge, Pro title, 3D Hexagon Logo)
-                // ==========================================
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Spacer(Modifier.height(8.dp))
+
+                TopBar(
+                    connectionState = connectionState,
+                    accent = accent,
+                    isSoundMuted = isSoundMuted,
+                    onLock = { viewModel.securityManager.lock() },
+                    onToggleSound = { viewModel.toggleSoundMute() }
+                )
+
+                Spacer(Modifier.height(14.dp))
+
+                ActiveServerCard(
+                    name = activeServer.name,
+                    country = activeServer.countryName,
+                    flag = activeServer.flagEmoji,
+                    protocol = activeServer.protocol,
+                    host = activeServer.hostLabel,
+                    pingMs = if (isConnected && liveStats.pingMs > 0) liveStats.pingMs else activeServer.pingMs,
+                    accent = accent,
+                    onClick = { viewModel.openServersModal() },
+                    onFastest = {
+                        viewModel.connectToFastest(context, onRequestVpnPermission)
+                    }
+                )
+
+                AnimatedVisibility(
+                    visible = connectionState == VpnConnectionState.FAILED && lastError != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
                 ) {
-                    // Left Action buttons: Lock & Sound
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(
-                            onClick = { viewModel.securityManager.lock() },
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MeelanoSurfaceCard)
-                                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(10.dp))
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = "قفل امنیتی",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { viewModel.toggleSoundMute() },
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(MeelanoSurfaceCard)
-                                .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(10.dp))
-                        ) {
-                            Icon(
-                                imageVector = if (isSoundMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
-                                contentDescription = "صدا",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
-
-                    // VIP Badge Pill
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xFF2B1F08))
-                            .border(1.dp, Color(0xFF5E4513), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "VIP 1.42/18.08G",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MeelanoGoldVip
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = "👑", fontSize = 11.sp)
-                        }
-                    }
-
-                    // Right Brand & Hexagon Logo
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(
-                                text = "PRO MEELANO",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = TextPrimary,
-                                letterSpacing = 0.5.sp
-                            )
+                    Column {
+                        Spacer(Modifier.height(10.dp))
+                        GlassCard(accent = MeelanoRedKillSwitch, corner = 14.dp, padding = 12.dp) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            when (connectionState) {
-                                                VpnConnectionState.CONNECTED -> PingGreen
-                                                VpnConnectionState.CONNECTING -> MeelanoCyan
-                                                else -> Color(0xFF00E5FF)
-                                            }
-                                        )
-                                        .alpha(dotAlpha)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = when (connectionState) {
-                                        VpnConnectionState.CONNECTED -> "متصل شد"
-                                        VpnConnectionState.CONNECTING -> "درحال اتصال..."
-                                        else -> "آماده اتصال"
-                                    },
-                                    fontSize = 10.sp,
-                                    color = when (connectionState) {
-                                        VpnConnectionState.CONNECTED -> PingGreen
-                                        VpnConnectionState.CONNECTING -> MeelanoCyan
-                                        else -> TextSecondary
-                                    }
-                                )
-                            }
-                        }
-
-                        MeelanoHexagonLogo(
-                            size = 40.dp,
-                            glowing = connectionState == VpnConnectionState.CONNECTED
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // ==========================================
-                // 2. ACTIVE SERVER SELECTOR CARD
-                // ==========================================
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MeelanoSurfaceCard)
-                        .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(16.dp))
-                        .clickable { viewModel.openServersModal() }
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Left: Chevron Arrow
-                        Icon(
-                            imageVector = Icons.Default.ChevronLeft,
-                            contentDescription = null,
-                            tint = TextMuted,
-                            modifier = Modifier.size(20.dp)
-                        )
-
-                        // Left-middle: Fastest badge
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF0C273D))
-                                .border(1.dp, Color(0xFF13507D), RoundedCornerShape(8.dp))
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "سریع‌ترین",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MeelanoCyan
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
                                 Icon(
-                                    imageVector = Icons.Default.Bolt,
+                                    Icons.Default.Warning,
                                     contentDescription = null,
-                                    tint = Color(0xFFFFD54F),
-                                    modifier = Modifier.size(12.dp)
+                                    tint = MeelanoRedKillSwitch,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    lastError.orEmpty(),
+                                    color = TextPrimary,
+                                    fontSize = 11.sp,
+                                    maxLines = 3
                                 )
                             }
                         }
-
-                        // Center: Server name & ping subtext
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 8.dp)
-                        ) {
-                            Text(
-                                text = activeServer.name,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextPrimary,
-                                maxLines = 1
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "سرور اختصاصی ${activeServer.countryName} • ${activeServer.pingMs}ms 📶 • ${activeServer.protocol}",
-                                fontSize = 10.sp,
-                                color = TextSecondary,
-                                maxLines = 1
-                            )
-                        }
-
-                        // Right: Flag
-                        Text(
-                            text = activeServer.flagEmoji,
-                            fontSize = 22.sp
-                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(Modifier.height(10.dp))
 
-                // Routing Indicator Pill (e.g. مسیریابی: دورزدن ایران)
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MeelanoSurfaceElevated)
-                        .padding(horizontal = 12.dp, vertical = 4.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(5.dp)
-                                .clip(CircleShape)
-                                .background(MeelanoCyan)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "مسیریابی: ${routingMode.title}",
-                            fontSize = 10.sp,
-                            color = TextSecondary
-                        )
+                PowerButton3D(
+                    state = connectionState,
+                    accent = accent,
+                    onClick = {
+                        if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.requestToggle(context, onRequestVpnPermission)
                     }
-                }
+                )
 
-                Spacer(modifier = Modifier.height(22.dp))
+                Spacer(Modifier.height(12.dp))
 
-                // ==========================================
-                // 3. CENTERPIECE CONNECTION METERS & 3D BUTTON
-                // ==========================================
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceAround,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Upload Meter Card (Left)
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(76.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF0F2D3D)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowUpward,
-                                contentDescription = "آپلود",
-                                tint = MeelanoCyan,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                ConnectionRadar(
+                    connected = isConnected,
+                    accent = accent,
+                    throughputMbps = liveStats.downloadMbps
+                )
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                Spacer(Modifier.height(6.dp))
 
-                        Text(
-                            text = "آپلود",
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
+                LiveSpeedRow(
+                    down = liveStats.downloadMbps,
+                    up = liveStats.uploadMbps,
+                    accent = accent
+                )
 
-                        Text(
-                            text = "${liveStats.uploadMbps} Mb/s",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = TextPrimary
-                        )
+                Spacer(Modifier.height(14.dp))
 
-                        Text(
-                            text = "MB ${liveStats.totalUploadedMb.toInt()}",
-                            fontSize = 10.sp,
-                            color = TextMuted
-                        )
-                    }
+                DashboardTabs(
+                    selected = dashboardTab,
+                    accent = accent,
+                    onSelect = { viewModel.setDashboardTab(it) }
+                )
 
-                    // Giant 3D Power Button (Center)
-                    PowerButton3D(
-                        state = connectionState,
-                        onClick = {
-                            onRequestVpnPermission()
-                        }
+                Spacer(Modifier.height(12.dp))
+
+                when (dashboardTab) {
+                    0 -> NetworkStatusPanel(
+                        accent = accent,
+                        connected = isConnected,
+                        pingMs = if (isConnected) liveStats.pingMs else activeServer.pingMs,
+                        tunnelIp = liveStats.tunnelIp,
+                        remoteHost = liveStats.remoteHost,
+                        protocol = if (isConnected) liveStats.activeProtocol else activeServer.protocol,
+                        encryption = liveStats.encryption,
+                        dnsQueries = liveStats.dnsQueries,
+                        flows = liveStats.activeFlows,
+                        uptime = liveStats.uptimeLabel,
+                        downloadedMb = liveStats.totalDownloadedMb,
+                        uploadedMb = liveStats.totalUploadedMb
                     )
 
-                    // Download Meter Card (Right)
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(76.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF1E1E45)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowDownward,
-                                contentDescription = "دانلود",
-                                tint = Color(0xFF82B1FF),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
+                    1 -> SecurityToolsPanel(
+                        accent = accent,
+                        routingTitle = routingMode.title,
+                        routingBadge = routingMode.badge,
+                        killSwitch = killSwitchEnabled,
+                        onOpenSettings = { viewModel.openSettingsModal() },
+                        onOpenSplit = { viewModel.openSplitTunneling() },
+                        onOpenLogs = { viewModel.openLogsConsole() },
+                        onOpenImport = { viewModel.openImport() },
+                        onToggleKillSwitch = { viewModel.toggleKillSwitch() }
+                    )
 
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        Text(
-                            text = "دانلود",
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
-
-                        Text(
-                            text = "${liveStats.downloadMbps} Mb/s",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = TextPrimary
-                        )
-
-                        Text(
-                            text = "MB ${liveStats.totalDownloadedMb.toInt()}",
-                            fontSize = 10.sp,
-                            color = TextMuted
-                        )
-                    }
+                    else -> TrafficLineChart(stats = liveStats, accent = accent)
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(Modifier.height(14.dp))
 
-                Text(
-                    text = when (connectionState) {
-                        VpnConnectionState.CONNECTED -> "تونل فعال • کل ترافیک رمزنگاری شده است"
-                        VpnConnectionState.CONNECTING -> "در حال برقراری هندشیک TLS 1.3..."
-                        else -> "آماده اتصال با یک لمس"
-                    },
-                    fontSize = 11.sp,
-                    color = if (connectionState == VpnConnectionState.CONNECTED) PingGreen else TextMuted
+                QuickActionsRow(
+                    accent = accent,
+                    onSettings = { viewModel.openSettingsModal() },
+                    onServers = { viewModel.openServersModal() },
+                    onLogs = { viewModel.openLogsConsole() }
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(Modifier.height(18.dp))
+                Footer(accent = accent, connected = isConnected)
+                Spacer(Modifier.height(20.dp))
+            }
 
-                // ==========================================
-                // 4. SEGMENTED TAB BAR (Traffic Chart, Security Tools, Network Status)
-                // ==========================================
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(MeelanoSurfaceCard)
-                        .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(14.dp))
-                        .padding(3.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Tab 2: Traffic Chart (نمودار ترافیک)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(if (dashboardTab == 2) MeelanoPurpleDeep else Color.Transparent)
-                            .clickable { viewModel.setDashboardTab(2) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "نمودار ترافیک",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (dashboardTab == 2) Color.White else TextSecondary
-                        )
-                    }
+            Modals(
+                viewModel = viewModel,
+                onRequestBiometric = onRequestBiometric,
+                isLocked = isLocked
+            )
+        }
+    }
+}
 
-                    // Tab 1: Security Tools (ابزارهای امنیتی)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(if (dashboardTab == 1) MeelanoPurpleDeep else Color.Transparent)
-                            .clickable { viewModel.setDashboardTab(1) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "ابزارهای امنیتی",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (dashboardTab == 1) Color.White else TextSecondary
-                        )
-                    }
+// ---------------------------------------------------------------- top bar
 
-                    // Tab 0: Network Status (وضعیت شبکه)
+@Composable
+private fun TopBar(
+    connectionState: VpnConnectionState,
+    accent: Color,
+    isSoundMuted: Boolean,
+    onLock: () -> Unit,
+    onToggleSound: () -> Unit
+) {
+    val statusColor by animateColorAsState(
+        when (connectionState) {
+            VpnConnectionState.CONNECTED -> MeelanoGreenSuccess
+            VpnConnectionState.FAILED -> MeelanoRedKillSwitch
+            VpnConnectionState.DISCONNECTED -> TextSecondary
+            else -> accent
+        },
+        tween(500),
+        label = "status"
+    )
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CircleIconButton(Icons.Default.Lock, "قفل امنیتی", onLock)
+            CircleIconButton(
+                if (isSoundMuted) Icons.Default.VolumeMute else Icons.Default.VolumeUp,
+                "صدا",
+                onToggleSound
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(MeelanoGoldVip.copy(alpha = 0.18f), Color.Transparent)
+                    )
+                )
+                .border(1.dp, MeelanoGoldVip.copy(alpha = 0.45f), CircleShape)
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Text("VIP 👑", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MeelanoGoldVip)
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(horizontalAlignment = Alignment.Start) {
+                Text(
+                    "MEELANO PRO",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = TextPrimary,
+                    letterSpacing = 1.sp
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(11.dp))
-                            .background(if (dashboardTab == 0) MeelanoPurpleDeep else Color.Transparent)
-                            .clickable { viewModel.setDashboardTab(0) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "وضعیت شبکه",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (dashboardTab == 0) Color.White else TextSecondary
-                        )
-                    }
+                        Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(connectionState.persName, fontSize = 10.sp, color = statusColor)
                 }
+            }
+            MeelanoHexagonLogo(
+                size = 42.dp,
+                glowing = connectionState == VpnConnectionState.CONNECTED,
+                accent = accent
+            )
+        }
+    }
+}
 
-                Spacer(modifier = Modifier.height(12.dp))
+@Composable
+private fun CircleIconButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+    ) {
+        Icon(icon, contentDescription = description, tint = TextSecondary, modifier = Modifier.size(18.dp))
+    }
+}
 
-                // ==========================================
-                // 5. TAB CONTENT AREA
-                // ==========================================
-                when (dashboardTab) {
-                    0 -> {
-                        // 2x2 Network Status Grid
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Encryption
-                                StatusGridItem(
-                                    title = "رمزنگاری داده",
-                                    value = "TLS 1.3 / AES-256",
-                                    valueColor = PingGreen,
-                                    modifier = Modifier.weight(1f)
-                                )
+// ---------------------------------------------------------------- server card
 
-                                // Tunnel IP
-                                StatusGridItem(
-                                    title = "IP اختصاصی تونل",
-                                    value = liveStats.tunnelIp,
-                                    valueColor = MeelanoCyan,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Protocol
-                                StatusGridItem(
-                                    title = "پروتکل فعال",
-                                    value = activeServer.protocol,
-                                    valueColor = MeelanoGoldVip,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                // Packet Loss
-                                StatusGridItem(
-                                    title = "پکت‌لاس (نشت بسته)",
-                                    value = "${liveStats.packetLossPercent}%",
-                                    valueColor = PingGreen,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                    1 -> {
-                        // Security Tools Overview
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StatusGridItem(
-                                title = "قطع اضطراری (Kill Switch)",
-                                value = if (killSwitchEnabled) "فعال • حفاظت نشت داده" else "غیرفعال",
-                                valueColor = if (killSwitchEnabled) Color(0xFFFF5252) else TextMuted
-                            )
-                            StatusGridItem(
-                                title = "DNS ایمن و ضد فیلتر",
-                                value = "1.1.1.1 Cloudflare Encrypted",
-                                valueColor = MeelanoCyan
-                            )
-                            StatusGridItem(
-                                title = "تفکیک ترافیک (Split Tunneling)",
-                                value = "${bypassApps.count { it.isBypassed }} اپلیکیشن بانکی و اسنپ دورزده شد",
-                                valueColor = PingGreen
-                            )
-                        }
-                    }
-                    2 -> {
-                        // Live Canvas Line Chart
-                        TrafficLineChart(stats = liveStats)
-                    }
+@Composable
+private fun ActiveServerCard(
+    name: String,
+    country: String,
+    flag: String,
+    protocol: String,
+    host: String,
+    pingMs: Int,
+    accent: Color,
+    onClick: () -> Unit,
+    onFastest: () -> Unit
+) {
+    GlassCard(modifier = Modifier.fillMaxWidth(), accent = accent, onClick = onClick, padding = 12.dp) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(flag, fontSize = 26.sp)
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        name,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "$country · $protocol",
+                        fontSize = 10.sp,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(host, fontSize = 9.sp, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
 
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // ==========================================
-                // 6. BOTTOM ACTION CARDS (تنظیمات & سرورها)
-                // ==========================================
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Settings Card (Left)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(68.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MeelanoSurfaceCard)
-                            .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(14.dp))
-                            .clickable { viewModel.openSettingsModal() }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF2E1B4E)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = "تنظیمات",
-                                    tint = Color(0xFFBA68C8),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "تنظیمات",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "امنیت و مسیریابی",
-                                    fontSize = 10.sp,
-                                    color = TextMuted
-                                )
-                            }
-                        }
-                    }
-
-                    // Servers Card (Right)
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(68.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MeelanoSurfaceCard)
-                            .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(14.dp))
-                            .clickable { viewModel.openServersModal() }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF0F2D3D)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Language,
-                                    contentDescription = "سرورها",
-                                    tint = MeelanoCyan,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            }
-
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(
-                                    text = "سرورها",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextPrimary
-                                )
-                                Text(
-                                    text = "انتخاب نود و لوکیشن",
-                                    fontSize = 10.sp,
-                                    color = TextMuted
-                                )
-                            }
-                        }
-                    }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (pingMs > 0) "$pingMs" else "—",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = pingColor(pingMs)
+                    )
+                    Text("ms", fontSize = 8.sp, color = TextMuted)
                 }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                // ==========================================
-                // 7. FOOTER BRANDING (MEELANO STUDIO DESIGN)
-                // ==========================================
+                Spacer(Modifier.width(8.dp))
+                SignalBars(pingMs)
+                Spacer(Modifier.width(10.dp))
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFF0A1224))
-                        .border(1.dp, Color(0xFF162544), RoundedCornerShape(20.dp))
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(accent.copy(alpha = 0.15f))
+                        .clickable { onFastest() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "MEELANO STUDIO DESIGN",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSecondary,
-                            letterSpacing = 1.sp
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        MeelanoHexagonLogo(size = 14.dp, glowing = false)
-                    }
+                    Icon(Icons.Default.Bolt, "سریع‌ترین سرور", tint = accent, modifier = Modifier.size(18.dp))
                 }
+            }
+        }
+    }
+}
 
-                Spacer(modifier = Modifier.height(4.dp))
+// ---------------------------------------------------------------- speed row
 
+@Composable
+private fun LiveSpeedRow(down: Float, up: Float, accent: Color) {
+    val animatedDown by animateFloatAsState(down, tween(500), label = "down")
+    val animatedUp by animateFloatAsState(up, tween(500), label = "up")
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        StatTile(
+            title = "دانلود",
+            value = "${"%.1f".format(animatedDown)} Mb/s",
+            icon = Icons.Default.Download,
+            tint = accent,
+            modifier = Modifier.weight(1f)
+        )
+        StatTile(
+            title = "آپلود",
+            value = "${"%.1f".format(animatedUp)} Mb/s",
+            icon = Icons.Default.Upload,
+            tint = MeelanoGreenSuccess,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+// ---------------------------------------------------------------- tabs
+
+@Composable
+private fun DashboardTabs(selected: Int, accent: Color, onSelect: (Int) -> Unit) {
+    val titles = listOf("وضعیت شبکه", "ابزار امنیتی", "نمودار ترافیک")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.04f))
+            .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(14.dp))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        titles.forEachIndexed { index, title ->
+            val isSelected = index == selected
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(
+                        if (isSelected) Brush.horizontalGradient(
+                            listOf(accent.copy(alpha = 0.28f), accent.copy(alpha = 0.10f))
+                        ) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
+                    )
+                    .clickable { onSelect(index) }
+                    .padding(vertical = 9.dp),
+                contentAlignment = Alignment.Center
+            ) {
                 Text(
-                    text = "Designed by Milad Yaghoobi",
-                    fontSize = 9.sp,
-                    color = TextMuted
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-            }
-
-            // ==========================================
-            // MODALS & DIALOGS
-            // ==========================================
-            if (isServersModalOpen) {
-                ServerListModal(
-                    vipServers = vipServers,
-                    freeServers = freeServers,
-                    activeServer = activeServer,
-                    isTestingPing = isTestingPing,
-                    isUpdatingGitHub = isUpdatingGitHub,
-                    onClose = { viewModel.closeServersModal() },
-                    onSelectServer = { server ->
-                        viewModel.selectServer(server, context)
-                        viewModel.closeServersModal()
-                    },
-                    onTestPing = { isVip -> viewModel.testPings(isVip) },
-                    onSortLowestPing = { isVip -> viewModel.sortByPing(isVip) },
-                    onUpdateGitHub = { viewModel.updateGitHubFreeServers() },
-                    onShowQr = { server -> viewModel.showQrCode(server) },
-                    onSmartImport = { server -> viewModel.triggerSmartImport(context, server.configLink) }
-                )
-            }
-
-            if (isSettingsModalOpen) {
-                SettingsModal(
-                    routingMode = routingMode,
-                    protocolFilter = protocolFilter,
-                    killSwitchEnabled = killSwitchEnabled,
-                    smartFailoverEnabled = smartFailoverEnabled,
-                    onClose = { viewModel.closeSettingsModal() },
-                    onRoutingModeChange = { viewModel.setRoutingMode(it) },
-                    onProtocolFilterChange = { viewModel.setCoreProtocolFilter(it) },
-                    onToggleKillSwitch = { viewModel.toggleKillSwitch() },
-                    onToggleSmartFailover = { viewModel.toggleSmartFailover() },
-                    onOpenLogs = { viewModel.openLogsConsole() },
-                    onOpenSplitTunneling = { viewModel.openSplitTunneling() },
-                    onLockApp = {
-                        viewModel.closeSettingsModal()
-                        viewModel.securityManager.lock()
-                    },
-                    activeConfigLink = activeServer.configLink
-                )
-            }
-
-            if (isLogsConsoleOpen) {
-                LiveLogConsoleDialog(
-                    logs = logs,
-                    onClose = { viewModel.closeLogsConsole() }
-                )
-            }
-
-            if (isSplitTunnelingOpen) {
-                SplitTunnelingDialog(
-                    bypassApps = bypassApps,
-                    onToggleApp = { pkg -> viewModel.toggleBypassApp(pkg) },
-                    onClose = { viewModel.closeSplitTunneling() }
-                )
-            }
-
-            selectedServerForQr?.let { server ->
-                QrCodeDialog(
-                    server = server,
-                    onClose = { viewModel.closeQrCode() }
-                )
-            }
-
-            if (smartImportFallbackOpen) {
-                SmartImportFallbackDialog(
-                    onClose = { viewModel.closeSmartImportFallback() }
-                )
-            }
-
-            if (isLocked) {
-                SecurityLockScreen(
-                    currentPin = currentPin,
-                    pinError = pinError,
-                    onDigitPress = { digit -> viewModel.securityManager.appendPinDigit(digit) },
-                    onDeleteDigit = { viewModel.securityManager.deletePinDigit() },
-                    onBiometricPress = {
-                        viewModel.securityManager.authenticateWithBiometricSuccess()
-                    },
-                    onLoginWithCredentials = { user, pass ->
-                        viewModel.securityManager.authenticateWithCredentials(user, pass)
-                    }
+                    title,
+                    fontSize = 11.sp,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isSelected) TextPrimary else TextSecondary
                 )
             }
         }
     }
 }
 
+// ---------------------------------------------------------------- panels
+
 @Composable
-fun StatusGridItem(
-    title: String,
-    value: String,
-    valueColor: Color = TextPrimary,
-    modifier: Modifier = Modifier
+private fun NetworkStatusPanel(
+    accent: Color,
+    connected: Boolean,
+    pingMs: Int,
+    tunnelIp: String,
+    remoteHost: String,
+    protocol: String,
+    encryption: String,
+    dnsQueries: Long,
+    flows: Int,
+    uptime: String,
+    downloadedMb: Float,
+    uploadedMb: Float
 ) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(MeelanoSurfaceCard)
-            .border(1.dp, MeelanoSurfaceCardBorder, RoundedCornerShape(12.dp))
-            .padding(10.dp)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.End
-        ) {
-            Text(
-                text = title,
-                fontSize = 10.sp,
-                color = TextSecondary
+    val quality = when {
+        !connected -> ConnectionQuality.UNKNOWN
+        pingMs <= 0 -> ConnectionQuality.UNKNOWN
+        pingMs < 90 -> ConnectionQuality.EXCELLENT
+        pingMs < 180 -> ConnectionQuality.GOOD
+        pingMs < 320 -> ConnectionQuality.FAIR
+        else -> ConnectionQuality.POOR
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        GlassCard(modifier = Modifier.fillMaxWidth(), accent = accent) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                HealthRing(
+                    fraction = quality.bars / 4f,
+                    color = pingColor(pingMs),
+                    label = quality.label,
+                    value = if (pingMs > 0) "$pingMs" else "—"
+                )
+                Column(horizontalAlignment = Alignment.Start, modifier = Modifier.weight(1f).padding(start = 14.dp)) {
+                    InfoRow("IP تونل", tunnelIp)
+                    InfoRow("نود خروجی", remoteHost)
+                    InfoRow("پروتکل", protocol)
+                    InfoRow("رمزنگاری", encryption)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatTile("مدت اتصال", uptime, Icons.Default.Timer, accent, Modifier.weight(1f))
+            StatTile("جریان فعال", "$flows", Icons.Default.Hub, MeelanoPurpleActive, Modifier.weight(1f))
+            StatTile("پرس‌وجوی DNS", "$dnsQueries", Icons.Default.Dns, MeelanoGreenSuccess, Modifier.weight(1f))
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatTile(
+                "کل دریافت",
+                "${"%.1f".format(downloadedMb)} MB",
+                Icons.Default.Download,
+                accent,
+                Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = value,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = valueColor
+            StatTile(
+                "کل ارسال",
+                "${"%.1f".format(uploadedMb)} MB",
+                Icons.Default.Upload,
+                MeelanoGreenSuccess,
+                Modifier.weight(1f)
             )
         }
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, fontSize = 10.sp, color = TextSecondary)
+        Text(
+            value,
+            fontSize = 11.sp,
+            color = TextPrimary,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun SecurityToolsPanel(
+    accent: Color,
+    routingTitle: String,
+    routingBadge: String,
+    killSwitch: Boolean,
+    onOpenSettings: () -> Unit,
+    onOpenSplit: () -> Unit,
+    onOpenLogs: () -> Unit,
+    onOpenImport: () -> Unit,
+    onToggleKillSwitch: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        GlassCard(modifier = Modifier.fillMaxWidth(), accent = accent, onClick = onOpenSettings) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Router, null, tint = accent, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text("حالت مسیریابی", fontSize = 10.sp, color = TextSecondary)
+                        Text(routingTitle, fontSize = 12.sp, color = TextPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Pill(routingBadge, accent)
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ToolCard(
+                "Kill Switch",
+                if (killSwitch) "فعال — بدون نشتی" else "غیرفعال",
+                Icons.Default.Shield,
+                if (killSwitch) MeelanoRedKillSwitch else TextMuted,
+                Modifier.weight(1f),
+                onToggleKillSwitch
+            )
+            ToolCard(
+                "تونل تفکیکی",
+                "اپ‌های داخلی مستقیم",
+                Icons.Default.Security,
+                MeelanoPurpleActive,
+                Modifier.weight(1f),
+                onOpenSplit
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ToolCard(
+                "کنسول لاگ زنده",
+                "رصد بسته‌ها و خطاها",
+                Icons.Default.Terminal,
+                MeelanoGreenSuccess,
+                Modifier.weight(1f),
+                onOpenLogs
+            )
+            ToolCard(
+                "افزودن کانفیگ",
+                "لینک یا اشتراک جدید",
+                Icons.Default.VpnKey,
+                accent,
+                Modifier.weight(1f),
+                onOpenImport
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    GlassCard(modifier = modifier, corner = 14.dp, padding = 12.dp, onClick = onClick) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(tint.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, null, tint = tint, modifier = Modifier.size(17.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+            Text(subtitle, fontSize = 9.sp, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun QuickActionsRow(
+    accent: Color,
+    onSettings: () -> Unit,
+    onServers: () -> Unit,
+    onLogs: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        ToolCard("تنظیمات", "امنیت و مسیریابی", Icons.Default.Tune, MeelanoPurpleActive, Modifier.weight(1f), onSettings)
+        ToolCard("سرورها", "انتخاب نود", Icons.Default.Language, accent, Modifier.weight(1f), onServers)
+        ToolCard("لاگ", "خروجی هسته", Icons.Default.NetworkCheck, MeelanoGreenSuccess, Modifier.weight(1f), onLogs)
+    }
+}
+
+@Composable
+private fun Footer(accent: Color, connected: Boolean) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.04f))
+                .border(1.dp, Color.White.copy(alpha = 0.07f), CircleShape)
+                .padding(horizontal = 14.dp, vertical = 6.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                MeelanoHexagonLogo(size = 16.dp, glowing = connected, accent = accent)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "MEELANO STUDIO DESIGN",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextSecondary,
+                    letterSpacing = 1.sp
+                )
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("Designed by Milad Yaghoobi", fontSize = 9.sp, color = TextMuted, modifier = Modifier.alpha(0.8f))
+    }
+}
+
+// ---------------------------------------------------------------- modals
+
+@Composable
+private fun Modals(
+    viewModel: MainViewModel,
+    onRequestBiometric: (onSuccess: () -> Unit, onError: (String) -> Unit) -> Unit,
+    isLocked: Boolean
+) {
+    val context = LocalContext.current
+
+    val isServersModalOpen by viewModel.isServersModalOpen.collectAsStateWithLifecycle()
+    val isSettingsModalOpen by viewModel.isSettingsModalOpen.collectAsStateWithLifecycle()
+    val isLogsConsoleOpen by viewModel.isLogsConsoleOpen.collectAsStateWithLifecycle()
+    val isSplitTunnelingOpen by viewModel.isSplitTunnelingOpen.collectAsStateWithLifecycle()
+    val isImportOpen by viewModel.isImportOpen.collectAsStateWithLifecycle()
+    val selectedServerForQr by viewModel.selectedServerForQr.collectAsStateWithLifecycle()
+    val smartImportFallbackOpen by viewModel.smartImportFallbackOpen.collectAsStateWithLifecycle()
+
+    if (isServersModalOpen) {
+        val vip by viewModel.vipServers.collectAsStateWithLifecycle()
+        val free by viewModel.freeServers.collectAsStateWithLifecycle()
+        val custom by viewModel.customServers.collectAsStateWithLifecycle()
+        val active by viewModel.activeServer.collectAsStateWithLifecycle()
+        val testing by viewModel.isTestingPing.collectAsStateWithLifecycle()
+        val updating by viewModel.isUpdatingGitHub.collectAsStateWithLifecycle()
+        val progress by viewModel.updateProgress.collectAsStateWithLifecycle()
+        val sort by viewModel.serverSort.collectAsStateWithLifecycle()
+        val query by viewModel.searchQuery.collectAsStateWithLifecycle()
+
+        ServerListModal(
+            vipServers = viewModel.sortedServers(vip),
+            freeServers = viewModel.sortedServers(free),
+            customServers = viewModel.sortedServers(custom),
+            activeServer = active,
+            isTestingPing = testing,
+            isUpdating = updating,
+            progressLabel = progress?.stage,
+            progressFraction = progress?.fraction ?: 0f,
+            sort = sort,
+            searchQuery = query,
+            onSearch = { viewModel.setSearchQuery(it) },
+            onSortChange = { viewModel.setSort(it) },
+            onClose = { viewModel.closeServersModal() },
+            onSelectServer = {
+                viewModel.selectServer(it, context)
+                viewModel.closeServersModal()
+            },
+            onTestPing = { viewModel.testPings(it) },
+            onRefreshSubscriptions = { viewModel.refreshSubscriptions() },
+            onShowQr = { viewModel.showQrCode(it) },
+            onSmartImport = { viewModel.triggerSmartImport(context, it.configLink) },
+            onToggleFavorite = { viewModel.toggleFavorite(it) },
+            onDeleteCustom = { viewModel.deleteCustomServer(it) },
+            onOpenImport = { viewModel.openImport() }
+        )
+    }
+
+    if (isSettingsModalOpen) {
+        val routing by viewModel.routingMode.collectAsStateWithLifecycle()
+        val protocol by viewModel.coreProtocolFilter.collectAsStateWithLifecycle()
+        val kill by viewModel.killSwitchEnabled.collectAsStateWithLifecycle()
+        val failover by viewModel.smartFailoverEnabled.collectAsStateWithLifecycle()
+        val autoConnect by viewModel.autoConnectEnabled.collectAsStateWithLifecycle()
+        val ipv6 by viewModel.ipv6Enabled.collectAsStateWithLifecycle()
+        val haptics by viewModel.hapticsEnabled.collectAsStateWithLifecycle()
+        val biometric by viewModel.biometricEnabled.collectAsStateWithLifecycle()
+        val lockStart by viewModel.lockOnStart.collectAsStateWithLifecycle()
+        val themeAccent by viewModel.themeAccent.collectAsStateWithLifecycle()
+        val dns1 by viewModel.dnsPrimary.collectAsStateWithLifecycle()
+        val dns2 by viewModel.dnsSecondary.collectAsStateWithLifecycle()
+        val subs by viewModel.subscriptions.collectAsStateWithLifecycle()
+        val active by viewModel.activeServer.collectAsStateWithLifecycle()
+
+        SettingsModal(
+            routingMode = routing,
+            protocolFilter = protocol,
+            killSwitchEnabled = kill,
+            smartFailoverEnabled = failover,
+            autoConnectEnabled = autoConnect,
+            ipv6Enabled = ipv6,
+            hapticsEnabled = haptics,
+            biometricEnabled = biometric,
+            lockOnStart = lockStart,
+            themeAccent = themeAccent,
+            dnsPrimary = dns1,
+            dnsSecondary = dns2,
+            subscriptions = subs.toList(),
+            activeConfigLink = active.configLink,
+            onClose = { viewModel.closeSettingsModal() },
+            onRoutingModeChange = { viewModel.setRoutingMode(it) },
+            onProtocolFilterChange = { viewModel.setCoreProtocolFilter(it) },
+            onToggleKillSwitch = { viewModel.toggleKillSwitch() },
+            onToggleSmartFailover = { viewModel.toggleSmartFailover() },
+            onToggleAutoConnect = { viewModel.toggleAutoConnect() },
+            onToggleIpv6 = { viewModel.toggleIpv6() },
+            onToggleHaptics = { viewModel.toggleHaptics() },
+            onToggleBiometric = { viewModel.toggleBiometric() },
+            onToggleLockOnStart = { viewModel.toggleLockOnStart() },
+            onAccentChange = { viewModel.setThemeAccent(it) },
+            onDnsChange = { a, b -> viewModel.setDns(a, b) },
+            onAddSubscription = { viewModel.addSubscription(it) },
+            onRemoveSubscription = { viewModel.removeSubscription(it) },
+            onOpenLogs = { viewModel.openLogsConsole() },
+            onOpenSplitTunneling = { viewModel.openSplitTunneling() },
+            onLockApp = {
+                viewModel.closeSettingsModal()
+                viewModel.securityManager.lock()
+            }
+        )
+    }
+
+    if (isLogsConsoleOpen) {
+        val logs by viewModel.logs.collectAsStateWithLifecycle()
+        LiveLogConsoleDialog(
+            logs = logs,
+            onClear = { viewModel.clearLogs() },
+            onClose = { viewModel.closeLogsConsole() }
+        )
+    }
+
+    if (isSplitTunnelingOpen) {
+        val apps by viewModel.bypassApps.collectAsStateWithLifecycle()
+        SplitTunnelingDialog(
+            bypassApps = apps,
+            onToggleApp = { viewModel.toggleBypassApp(it) },
+            onClose = { viewModel.closeSplitTunneling() }
+        )
+    }
+
+    if (isImportOpen) {
+        ImportConfigDialog(
+            onImport = { viewModel.importConfigs(it) },
+            onImportClipboard = { viewModel.importFromClipboard(context) },
+            onClose = { viewModel.closeImport() }
+        )
+    }
+
+    selectedServerForQr?.let { server ->
+        QrCodeDialog(server = server, onClose = { viewModel.closeQrCode() })
+    }
+
+    if (smartImportFallbackOpen) {
+        SmartImportFallbackDialog(onClose = { viewModel.closeSmartImportFallback() })
+    }
+
+    if (isLocked) {
+        val pin by viewModel.securityManager.currentPinInput.collectAsStateWithLifecycle()
+        val error by viewModel.securityManager.pinError.collectAsStateWithLifecycle()
+        SecurityLockScreen(
+            currentPin = pin,
+            pinError = error,
+            biometricAvailable = viewModel.securityManager.biometricAvailable,
+            onDigitPress = { viewModel.securityManager.appendPinDigit(it) },
+            onDeleteDigit = { viewModel.securityManager.deletePinDigit() },
+            onBiometricPress = {
+                onRequestBiometric(
+                    { viewModel.securityManager.onBiometricSucceeded() },
+                    { message -> viewModel.securityManager.onBiometricFailed(message) }
+                )
+            }
+        )
     }
 }
