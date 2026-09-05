@@ -98,6 +98,7 @@ class MeelanoVpnService : VpnService() {
     private var tunnelJob: Job? = null
     private var udpNat: UdpNat? = null
     private var stack: TcpStack? = null
+    private var healthMonitor: HealthMonitor? = null
     private var activeEndpoint: ProxyEndpoint? = null
     private var counter: TrafficCounter? = null
     private var sessionStartedAt = 0L
@@ -306,6 +307,18 @@ class MeelanoVpnService : VpnService() {
         stack = tcpStack
         log("TCP stack online · outbound = ${endpoint.displayProtocol}")
 
+        // Detect a tunnel that is "connected" but no longer carrying traffic.
+        healthMonitor = HealthMonitor(
+            scope = serviceScope,
+            stack = { stack },
+            onDegraded = { reason ->
+                log("Tunnel unhealthy: $reason — reporting failure for failover")
+                _lastError.value = "کیفیت اتصال افت کرد ($reason)"
+                _connectionState.value = VpnConnectionState.FAILED
+            },
+            onLog = { log(it) }
+        ).also { it.start() }
+
         val dnsRelay = DnsRelay(
             upstreamServers = listOf(request.dnsPrimary, request.dnsSecondary),
             protect = { protect(it) },
@@ -356,6 +369,8 @@ class MeelanoVpnService : VpnService() {
         } finally {
             nat.shutdown()
             tcpStack.shutdown()
+            healthMonitor?.stop()
+            healthMonitor = null
             stack = null
         }
     }
@@ -411,6 +426,8 @@ class MeelanoVpnService : VpnService() {
     }
 
     private fun teardown(notifyState: Boolean) {
+        healthMonitor?.stop()
+        healthMonitor = null
         statsJob?.cancel()
         tunnelJob?.cancel()
         udpNat?.shutdown()

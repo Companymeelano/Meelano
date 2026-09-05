@@ -58,20 +58,29 @@ object ConfigParser {
         val host = obj.optString("add")
         val port = obj.optString("port").toIntOrNull() ?: obj.optInt("port")
         val net = obj.optString("net", "tcp").ifBlank { "tcp" }
-        val tls = obj.optString("tls")
+        val tlsRaw = obj.optString("tls")
+        val tls = when (tlsRaw.lowercase()) {
+            "1", "true" -> "tls"
+            "0", "false", "none", "" -> ""
+            else -> tlsRaw
+        }
         return ProxyEndpoint(
             protocol = Protocol.VMESS,
             host = host,
             port = port,
             remark = obj.optString("ps").ifBlank { host },
             userId = obj.optString("id"),
-            security = if (tls.isBlank() || tls == "none") "" else tls,
+            security = tls,
             sni = obj.optString("sni").ifBlank { obj.optString("host") },
             wsHost = obj.optString("host"),
             alpn = obj.optString("alpn"),
             network = net,
             path = obj.optString("path"),
-            serviceName = if (net == "grpc") obj.optString("path") else "",
+            serviceName = if (net == "grpc" || net == "gun") {
+                obj.optString("path").ifBlank { obj.optString("serviceName") }
+            } else {
+                ""
+            },
             raw = link
         )
     }
@@ -96,7 +105,8 @@ object ConfigParser {
             alpn = decodeComponent(q("alpn")),
             network = net,
             path = decodeComponent(q("path")),
-            serviceName = q("serviceName"),
+            serviceName = q("serviceName")
+                .ifBlank { if (net == "grpc" || net == "gun") decodeComponent(q("path")) else "" },
             fingerprint = q("fp"),
             publicKey = q("pbk"),
             shortId = q("sid"),
@@ -130,7 +140,9 @@ object ConfigParser {
     private fun parseShadowsocks(link: String): ProxyEndpoint? {
         val body = link.removePrefix("ss://")
         val remark = body.substringAfter('#', "").let { decodeComponent(it) }
-        val main = body.substringBefore('#').substringBefore('?')
+        val beforeFragment = body.substringBefore('#')
+        val query = beforeFragment.substringAfter('?', "")
+        val main = beforeFragment.substringBefore('?')
 
         val (userPart, hostPart) = if (main.contains('@')) {
             main.substringBeforeLast('@') to main.substringAfterLast('@')
@@ -139,19 +151,61 @@ object ConfigParser {
             val decoded = decodeBase64(main) ?: return null
             decoded.substringBeforeLast('@') to decoded.substringAfterLast('@')
         }
-        val credentials = if (userPart.contains(':')) userPart else decodeBase64(userPart) ?: userPart
-        val host = hostPart.substringBeforeLast(':')
-        val port = hostPart.substringAfterLast(':').toIntOrNull() ?: return null
+
+        // SIP002 allows the userinfo to be base64 *or* percent-encoded plaintext.
+        val credentials = when {
+            userPart.contains(':') -> decodeComponent(userPart)
+            else -> decodeBase64(userPart) ?: decodeComponent(userPart)
+        }
+
+        // IPv6 literals arrive as [::1]:8388.
+        val host: String
+        val port: Int
+        if (hostPart.startsWith("[")) {
+            host = hostPart.substringAfter('[').substringBefore(']')
+            port = hostPart.substringAfterLast(':').toIntOrNull() ?: return null
+        } else {
+            host = hostPart.substringBeforeLast(':')
+            port = hostPart.substringAfterLast(':').toIntOrNull() ?: return null
+        }
+
+        // A v2ray-plugin in websocket mode turns this into a ws-transported node.
+        val params = parseQuery(query)
+        val plugin = params["plugin"].orEmpty()
+        val pluginOpts = plugin.substringAfter(';', "")
+        val isWebSocketPlugin = plugin.startsWith("v2ray-plugin") && pluginOpts.contains("mode=websocket") ||
+            plugin.startsWith("obfs") && pluginOpts.contains("obfs=websocket")
+
         return ProxyEndpoint(
             protocol = Protocol.SHADOWSOCKS,
             host = host,
             port = port,
             remark = remark.ifBlank { host },
-            method = credentials.substringBefore(':'),
+            method = credentials.substringBefore(':').trim(),
             password = credentials.substringAfter(':', ""),
+            security = if (pluginOpts.contains("tls")) "tls" else "",
+            sni = optionValue(pluginOpts, "host"),
+            wsHost = optionValue(pluginOpts, "host"),
+            network = if (isWebSocketPlugin) "ws" else "tcp",
+            path = optionValue(pluginOpts, "path"),
             raw = link
         )
     }
+
+    /** Reads `key=value;key=value` plugin options. */
+    private fun optionValue(options: String, key: String): String =
+        options.split(';')
+            .firstOrNull { it.startsWith("$key=") }
+            ?.substringAfter('=')
+            .orEmpty()
+
+    /** Parses a raw `a=b&c=d` query string with percent-decoding. */
+    private fun parseQuery(query: String): Map<String, String> =
+        query.split('&')
+            .filter { it.contains('=') }
+            .associate {
+                decodeComponent(it.substringBefore('=')) to decodeComponent(it.substringAfter('='))
+            }
 
     // endregion
 

@@ -125,11 +125,29 @@ class SettingsStore(private val context: Context) {
             "ir.bmi.mobilebanking", "mob.banking.android.sepah", "com.pmb.mobile"
         )
 
+        /**
+         * Free-node sources, ordered roughly by how well curated they are.
+         *
+         * All of these are actively maintained aggregators that re-publish
+         * working nodes several times a day. Protocol-specific feeds are
+         * preferred over giant mixed dumps because they carry far less dead
+         * weight, and each is fetched through a CDN mirror that stays reachable
+         * from Iran more often than raw.githubusercontent.com.
+         */
         val defaultSubscriptions = setOf(
-            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Sub1.txt",
-            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Sub2.txt",
-            "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt",
-            "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/mix"
+            // Curated, protocol-split feeds — the highest hit-rate sources.
+            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/vless.txt",
+            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/vmess.txt",
+            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/trojan.txt",
+            "https://cdn.jsdelivr.net/gh/barry-far/V2ray-Configs@main/Splitted-By-Protocol/ss.txt",
+            // Reality-capable and TLS-fronted nodes.
+            "https://cdn.jsdelivr.net/gh/Epodonios/v2ray-configs@main/Splitted-By-Protocol/vless.txt",
+            "https://cdn.jsdelivr.net/gh/Epodonios/v2ray-configs@main/Splitted-By-Protocol/trojan.txt",
+            // Broad aggregators, kept last so curated nodes rank first.
+            "https://cdn.jsdelivr.net/gh/mahdibland/V2RayAggregator@master/sub/sub_merge.txt",
+            "https://cdn.jsdelivr.net/gh/yebekhe/TVC@main/subscriptions/xray/normal/mix",
+            "https://cdn.jsdelivr.net/gh/mfuu/v2ray@master/v2ray",
+            "https://cdn.jsdelivr.net/gh/ALIILAPRO/v2rayNG-Config@main/server.txt"
         )
     }
 }

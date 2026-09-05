@@ -201,6 +201,23 @@ class ShadowsocksOutbound(
     }
 
     companion object {
+        /**
+         * AEAD ciphers this client implements. Shadowsocks-2022 (`2022-blake3-*`)
+         * uses a different key schedule and session protocol, so those nodes are
+         * rejected up front rather than failing mid-handshake.
+         */
+        private val SUPPORTED_METHODS = setOf(
+            "aes-128-gcm", "aes-256-gcm",
+            "chacha20-ietf-poly1305", "chacha20-poly1305"
+        )
+
+        fun supportsMethod(method: String): Boolean {
+            val normalised = method.lowercase().trim()
+            // A blank method usually means the link omitted it; assume the default.
+            if (normalised.isEmpty()) return true
+            return normalised in SUPPORTED_METHODS
+        }
+
         private const val TAG_SIZE = 16
         private const val MAX_CHUNK = 0x3FFF
         private val SUBKEY_INFO = "ss-subkey".toByteArray(Charsets.US_ASCII)

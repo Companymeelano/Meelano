@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import com.example.core.ConfigParser
+import com.example.core.NodeValidator
 import com.example.core.PingTester
 import com.example.vpn.proto.OutboundFactory
 import com.example.core.Protocol
@@ -63,6 +64,9 @@ class ServerRepository(
 
     private val _updateProgress = MutableStateFlow<UpdateProgress?>(null)
     val updateProgress: StateFlow<UpdateProgress?> = _updateProgress.asStateFlow()
+
+    /** No more than this many surviving nodes may share one host address. */
+    private val MAX_NODES_PER_HOST = 3
 
     data class UpdateProgress(val stage: String, val done: Int, val total: Int) {
         val fraction: Float get() = if (total <= 0) 0f else done.toFloat() / total
@@ -201,46 +205,87 @@ class ServerRepository(
                 )
             }
 
-            // Only keep nodes whose protocol this build can genuinely carry — a
-            // node we cannot speak to is worse than no node at all.
-            val candidates = endpoints.values
+            // Stage 1 — structural filter. Drop anything this build cannot carry
+            // and anything the user deleted, before spending time on the network.
+            val eligible = endpoints.values
                 .filter { OutboundFactory.supports(it) }
                 .filterNot { "free_${it.host}_${it.port}" in hidden }
                 .toList()
-                .take(220)
-            _updateProgress.value = UpdateProgress("تست پینگ ${candidates.size} نود…", 0, candidates.size)
-            val latencies = PingTester.pingAll(
-                items = candidates,
-                parallelism = 24,
-                timeoutMs = 1800,
+
+            // Stage 2 — cheap TCP reachability, to shrink the field fast.
+            _updateProgress.value = UpdateProgress("تست دسترسی ${eligible.size} نود…", 0, eligible.size)
+            val reachable = PingTester.pingAll(
+                items = eligible.take(400),
+                parallelism = 32,
+                timeoutMs = 1500,
                 keyOf = { "${it.host}:${it.port}" },
                 addressOf = { it.host to it.port }
-            )
-            _updateProgress.value = UpdateProgress("انتخاب بهترین نودها…", candidates.size, candidates.size)
-
-            val alive = candidates
-                .mapNotNull { endpoint ->
-                    val latency = latencies["${endpoint.host}:${endpoint.port}"] ?: PingTester.UNREACHABLE
-                    if (latency <= 0) null else endpoint to latency
+            ).let { latencies ->
+                eligible.mapNotNull { endpoint ->
+                    val latency = latencies["${endpoint.host}:${endpoint.port}"]
+                        ?: PingTester.UNREACHABLE
+                    if (latency <= 0 || latency >= PingTester.UNREACHABLE) null else endpoint to latency
                 }
-                .sortedBy { it.second }
-                .take(keep)
+                    .sortedBy { it.second }
+                    // Only the most responsive candidates earn a full handshake.
+                    .take(keep * 5)
+                    .map { it.first }
+            }
 
-            if (alive.isEmpty()) {
+            if (reachable.isEmpty()) {
                 _updateProgress.value = null
                 return@withContext Result.failure(
-                    IllegalStateException("همه نودهای دریافتی در دسترس نبودند")
+                    IllegalStateException("هیچ نودی در دسترس نبود؛ اتصال اینترنت را بررسی کنید")
                 )
             }
 
+            // Stage 3 — the strict test: a real protocol handshake plus a live
+            // HTTP request proxied through the node. Only nodes that genuinely
+            // relayed traffic survive this, which is what makes the list usable.
+            _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی ${reachable.size} نود…", 0, reachable.size)
+            val validated = NodeValidator.validateAll(
+                endpoints = reachable,
+                parallelism = 12,
+                probeTimeoutMs = 6_000,
+                onProgress = { done, total ->
+                    _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی…", done, total)
+                }
+            )
+
+            if (validated.isEmpty()) {
+                _updateProgress.value = null
+                return@withContext Result.failure(
+                    IllegalStateException("هیچ نودی تست واقعی را پاس نکرد؛ بعداً دوباره تلاش کنید")
+                )
+            }
+
+            // Stage 4 — diversity: cap how many nodes come from one host so the
+            // list is not twelve entries pointing at the same overloaded server.
+            val perHost = HashMap<String, Int>()
+            val alive = validated
+                .filter { result ->
+                    val count = perHost.getOrDefault(result.endpoint.host, 0)
+                    if (count >= MAX_NODES_PER_HOST) false else {
+                        perHost[result.endpoint.host] = count + 1
+                        true
+                    }
+                }
+                .take(keep)
+                .map { it.endpoint to it.latencyMs }
+
             val favorites = settings.favorites.first()
             val now = System.currentTimeMillis()
-            val servers = alive.mapIndexed { index, (endpoint, latency) ->
+            // Number nodes per country so names read "MeeLano آلمان ۲", matching
+            // the VIP list instead of an opaque running index.
+            val perCountry = HashMap<String, Int>()
+            val servers = alive.map { (endpoint, latency) ->
                 val geo = GeoLabeler.of(endpoint.host, endpoint.remark)
+                val ordinal = perCountry.getOrDefault(geo.country, 0) + 1
+                perCountry[geo.country] = ordinal
                 val id = "free_${endpoint.host}_${endpoint.port}"
                 VpnServer(
                     id = id,
-                    name = "Meelano-Free${index + 1} ${geo.flag}",
+                    name = "MeeLano ${geo.country} $ordinal",
                     countryName = geo.country,
                     flagEmoji = geo.flag,
                     protocol = endpoint.displayProtocol,

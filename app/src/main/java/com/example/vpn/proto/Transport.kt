@@ -22,6 +22,11 @@ import javax.net.ssl.X509TrustManager
  */
 object Transport {
 
+    /** A current, ordinary-looking mobile Chrome UA. */
+    const val USER_AGENT =
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 60_000
 
@@ -58,11 +63,32 @@ object Transport {
         var input: InputStream = BufferedInputStream(socket.getInputStream(), 32 * 1024)
         var output: OutputStream = socket.getOutputStream()
 
-        if (endpoint.network == "ws") {
-            performWebSocketUpgrade(endpoint, input, output)
-            val framed = WebSocketStream(input, output)
-            input = framed.input
-            output = framed.output
+        when (endpoint.network) {
+            "ws" -> {
+                performWebSocketUpgrade(endpoint, input, output)
+                val framed = WebSocketStream(input, output)
+                input = framed.input
+                output = framed.output
+            }
+
+            // HTTPUpgrade: same handshake shape as WebSocket but the payload is
+            // raw afterwards, with no frame headers at all.
+            "httpupgrade" -> {
+                performHttpUpgrade(endpoint, input, output)
+            }
+
+            "grpc", "gun" -> {
+                val service = endpoint.serviceName.trim('/').ifBlank { "GunService" }
+                val h2 = Http2Stream(
+                    source = input,
+                    sink = output,
+                    authority = endpoint.effectiveHost,
+                    path = "/$service/Tun",
+                    userAgent = USER_AGENT
+                )
+                input = h2.input
+                output = h2.output
+            }
         }
 
         return Carrier(socket, input, output)
@@ -98,7 +124,9 @@ object Transport {
                 .filter { it.isNotEmpty() }
             params.applicationProtocols = when {
                 alpn.isNotEmpty() -> alpn.toTypedArray()
-                endpoint.network == "ws" -> arrayOf("http/1.1")
+                endpoint.network == "grpc" || endpoint.network == "gun" -> arrayOf("h2")
+                endpoint.network == "ws" || endpoint.network == "httpupgrade" ->
+                    arrayOf("http/1.1")
                 else -> arrayOf("h2", "http/1.1")
             }
             tls.sslParameters = params
@@ -107,6 +135,37 @@ object Transport {
         tls.soTimeout = READ_TIMEOUT_MS
         tls.startHandshake()
         return tls
+    }
+
+    /**
+     * HTTPUpgrade transport: a plain `Upgrade: websocket` handshake after which
+     * the connection carries raw bytes with no WebSocket framing. Cheaper than
+     * `ws` and increasingly common behind CDNs.
+     */
+    private fun performHttpUpgrade(
+        endpoint: ProxyEndpoint,
+        input: InputStream,
+        output: OutputStream
+    ) {
+        val host = endpoint.effectiveHost
+        val path = endpoint.path.ifBlank { "/" }
+        val request = buildString {
+            append("GET ").append(path).append(" HTTP/1.1\r\n")
+            append("Host: ").append(host).append("\r\n")
+            append("Upgrade: websocket\r\n")
+            append("Connection: Upgrade\r\n")
+            append("User-Agent: ").append(USER_AGENT).append("\r\n")
+            append("\r\n")
+        }
+        output.write(request.toByteArray(Charsets.US_ASCII))
+        output.flush()
+
+        val status = readHttpHeaders(input)
+        if (!status.contains(" 101")) {
+            throw java.io.IOException(
+                "HTTPUpgrade rejected: ${status.lineSequence().firstOrNull().orEmpty()}"
+            )
+        }
     }
 
     private fun performWebSocketUpgrade(
@@ -128,8 +187,7 @@ object Transport {
             append("Connection: Upgrade\r\n")
             append("Sec-WebSocket-Key: ").append(encodedKey).append("\r\n")
             append("Sec-WebSocket-Version: 13\r\n")
-            append("User-Agent: Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 ")
-            append("(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36\r\n")
+            append("User-Agent: ").append(USER_AGENT).append("\r\n")
             append("\r\n")
         }
         output.write(request.toByteArray(Charsets.US_ASCII))
