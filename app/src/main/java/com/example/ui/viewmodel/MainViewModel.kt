@@ -16,6 +16,7 @@ import com.example.data.settings.SettingsStore
 import com.example.util.SmartImportHelper
 import com.example.core.SpeedTester
 import com.example.core.ConfigParser
+import com.example.core.ConnectionAdvisor
 import com.example.util.SoundEngine
 import com.example.vpn.MeelanoVpnService
 import com.example.vpn.VpnConnectionState
@@ -36,6 +37,24 @@ class MainViewModel(
 
     /** Application context remembered from the last connect, for auto-retry. */
     private var appContext: Context? = null
+
+    /**
+     * Learns which nodes work on this device and network.
+     *
+     * Created lazily because the ViewModel is constructed without a Context;
+     * every caller already goes through [startVpn] or [attach], which set one.
+     */
+    private var advisorRef: ConnectionAdvisor? = null
+    val advisor: ConnectionAdvisor?
+        get() = advisorRef
+
+    /** Gives the ViewModel a Context so device-local learning can start. */
+    fun attach(context: Context) {
+        appContext = context.applicationContext
+        if (advisorRef == null) {
+            advisorRef = ConnectionAdvisor(context.applicationContext)
+        }
+    }
 
     // ---- tunnel state ----
     val connectionState: StateFlow<VpnConnectionState> = MeelanoVpnService.connectionState
@@ -166,7 +185,7 @@ class MainViewModel(
     }
 
     fun startVpn(context: Context) {
-        appContext = context.applicationContext
+        attach(context)
         viewModelScope.launch {
             val server = activeServer.value
             val bypass = ArrayList(bypassApps.value.filter { it.isBypassed }.map { it.packageName })
@@ -207,6 +226,32 @@ class MainViewModel(
                 // The service now caps its own handshake, but a wedged socket or
                 // a missed callback must not leave the user staring at "در حال
                 // اتصال" with no way forward.
+                // Feed every outcome back so the ranking improves with use.
+                when (state) {
+                    VpnConnectionState.CONNECTED ->
+                        advisorRef?.record(
+                            nodeKey = activeServer.value.id,
+                            success = true,
+                            latencyMs = activeServer.value.pingMs
+                        )
+
+                    VpnConnectionState.FAILED ->
+                        advisorRef?.record(nodeKey = activeServer.value.id, success = false)
+
+                    VpnConnectionState.DISCONNECTED -> if (connectedSince > 0L) {
+                        // Credit the node with how long it actually held.
+                        advisorRef?.record(
+                            nodeKey = activeServer.value.id,
+                            success = true,
+                            latencyMs = activeServer.value.pingMs,
+                            holdSeconds = ((System.currentTimeMillis() - connectedSince) / 1000).toInt()
+                        )
+                        connectedSince = 0L
+                    }
+
+                    else -> Unit
+                }
+
                 when (state) {
                     VpnConnectionState.CONNECTED -> SoundEngine.play(SoundEngine.Cue.CONNECT)
                     VpnConnectionState.DISCONNECTED -> SoundEngine.play(SoundEngine.Cue.DISCONNECT)
@@ -329,10 +374,22 @@ class MainViewModel(
             triedServerIds.add(activeServer.value.id)
             MeelanoVpnService.log("Smart Failover: searching for a healthy node…")
 
-            val ranked = repository.allServers()
+            // Order by learned reliability rather than latency alone. Raw ping
+            // is a poor predictor here: a blocked node whose port still answers
+            // looks like the fastest candidate, which is precisely how failover
+            // used to keep picking dead servers.
+            val reachable = repository.allServers()
                 .filterNot { it.id in triedServerIds }
                 .filter { it.pingMs > 0 && it.pingMs < com.example.core.PingTester.UNREACHABLE }
-                .sortedBy { it.pingMs }
+
+            val learner = advisorRef
+            val ranked = if (learner != null) {
+                val ordered = learner.rank(reachable.map { it.id })
+                val byId = reachable.associateBy { it.id }
+                ordered.mapNotNull { byId[it] }
+            } else {
+                reachable.sortedBy { it.pingMs }
+            }
 
             val candidates = ranked.ifEmpty {
                 repository.allServers().filterNot { it.id in triedServerIds }

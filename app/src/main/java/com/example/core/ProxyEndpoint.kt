@@ -27,6 +27,12 @@ data class ProxyEndpoint(
     /** Requested ALPN list, e.g. `http/1.1` or `h2`. */
     val alpn: String = "",
     val allowInsecure: Boolean = false,
+    /** WireGuard: client tunnel addresses, comma separated. */
+    val localAddress: String = "",
+    /** WireGuard: the three reserved bytes some providers require. */
+    val reserved: String = "",
+    /** TUIC: congestion controller, e.g. bbr or cubic. */
+    val congestion: String = "",
     val raw: String = ""
 ) {
     val isUdpBased: Boolean get() = protocol == Protocol.HYSTERIA2 || network == "quic"
@@ -59,6 +65,8 @@ enum class Protocol(val label: String, val scheme: String) {
     TROJAN("Trojan", "trojan"),
     SHADOWSOCKS("Shadowsocks", "ss"),
     HYSTERIA2("Hysteria 2", "hy2"),
+    TUIC("TUIC", "tuic"),
+    WIREGUARD("WireGuard", "wireguard"),
     SOCKS5("SOCKS5", "socks"),
     UNKNOWN("Unknown", "");
 
@@ -66,6 +74,8 @@ enum class Protocol(val label: String, val scheme: String) {
         fun fromScheme(scheme: String): Protocol = when (scheme.lowercase()) {
             "vmess" -> VMESS
             "vless" -> VLESS
+            "tuic" -> TUIC
+            "wireguard", "wg" -> WIREGUARD
             "trojan", "trojan-go" -> TROJAN
             "ss", "shadowsocks" -> SHADOWSOCKS
             "hy2", "hysteria2", "hysteria" -> HYSTERIA2

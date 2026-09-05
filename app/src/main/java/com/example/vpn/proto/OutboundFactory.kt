@@ -16,8 +16,11 @@ object OutboundFactory {
         val protocolOk = when (endpoint.protocol) {
             Protocol.VLESS, Protocol.TROJAN, Protocol.SHADOWSOCKS,
             Protocol.VMESS, Protocol.SOCKS5 -> true
-            // Hysteria2 is QUIC/UDP based and needs a QUIC stack we do not embed.
-            Protocol.HYSTERIA2, Protocol.UNKNOWN -> false
+            // These need a QUIC or kernel-datagram stack the Kotlin engine does
+            // not embed. The bundled Xray core handles Hysteria2 and WireGuard,
+            // so callers check XrayConfigBuilder.isSupported before giving up.
+            Protocol.HYSTERIA2, Protocol.TUIC,
+            Protocol.WIREGUARD, Protocol.UNKNOWN -> false
         }
         if (!protocolOk) return false
         if (endpoint.network !in SUPPORTED_NETWORKS) return false
@@ -53,6 +56,12 @@ object OutboundFactory {
     fun unsupportedReason(endpoint: ProxyEndpoint): String = when {
         endpoint.security == "reality" ->
             "VLESS Reality نیازمند تبادل کلید X25519 است و هنوز پشتیبانی نمی‌شود"
+
+        endpoint.protocol == Protocol.TUIC ->
+            "TUIC نیازمند پشتهٔ QUIC است و هسته‌های همراه این نسخه آن را ندارند"
+
+        endpoint.protocol == Protocol.WIREGUARD ->
+            "WireGuard تنها با هستهٔ Xray کار می‌کند"
 
         endpoint.protocol == Protocol.HYSTERIA2 ->
             "Hysteria 2 به پشتهٔ QUIC نیاز دارد و در این نسخه پشتیبانی نمی‌شود"

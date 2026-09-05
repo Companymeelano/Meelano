@@ -30,6 +30,8 @@ object ConfigParser {
                 Protocol.VLESS -> parseStandard(trimmed, Protocol.VLESS)
                 Protocol.TROJAN -> parseStandard(trimmed, Protocol.TROJAN)
                 Protocol.HYSTERIA2 -> parseHysteria2(trimmed)
+                Protocol.TUIC -> parseTuic(trimmed)
+                Protocol.WIREGUARD -> parseWireGuard(trimmed)
                 Protocol.SHADOWSOCKS -> parseShadowsocks(trimmed)
                 Protocol.SOCKS5 -> parseStandard(trimmed, Protocol.SOCKS5)
                 Protocol.UNKNOWN -> null
@@ -111,6 +113,60 @@ object ConfigParser {
             publicKey = q("pbk"),
             shortId = q("sid"),
             allowInsecure = q("allowInsecure") == "1" || q("insecure") == "1",
+            raw = link
+        )
+    }
+
+    /**
+     * TUIC v5: `tuic://uuid:password@host:port?...`
+     *
+     * The UUID and password are both carried in the userinfo, unlike Hysteria2
+     * where a lone secret is the whole credential.
+     */
+    private fun parseTuic(link: String): ProxyEndpoint? {
+        val uri = Uri.parse(link.replaceFirst("tuic://", "https://"))
+        val host = uri.host ?: return null
+        val userInfo = uri.userInfo.orEmpty()
+        val q = { key: String -> uri.getQueryParameter(key).orEmpty() }
+        return ProxyEndpoint(
+            protocol = Protocol.TUIC,
+            host = host,
+            port = if (uri.port > 0) uri.port else 443,
+            remark = uri.fragment?.let { decodeComponent(it) }.orEmpty().ifBlank { host },
+            userId = userInfo.substringBefore(':'),
+            password = userInfo.substringAfter(':', ""),
+            security = "tls",
+            sni = q("sni"),
+            alpn = decodeComponent(q("alpn")).ifBlank { "h3" },
+            congestion = q("congestion_control").ifBlank { "bbr" },
+            network = "quic",
+            allowInsecure = q("allow_insecure") == "1" || q("insecure") == "1",
+            raw = link
+        )
+    }
+
+    /**
+     * WireGuard: `wireguard://privateKey@host:port?publickey=...&address=...`
+     *
+     * There is no single official URI scheme, so accept the common spellings
+     * different clients emit for the same fields.
+     */
+    private fun parseWireGuard(link: String): ProxyEndpoint? {
+        val normalized = link.replaceFirst("wg://", "wireguard://")
+        val uri = Uri.parse(normalized.replaceFirst("wireguard://", "https://"))
+        val host = uri.host ?: return null
+        val q = { key: String -> uri.getQueryParameter(key).orEmpty() }
+        return ProxyEndpoint(
+            protocol = Protocol.WIREGUARD,
+            host = host,
+            port = if (uri.port > 0) uri.port else 51820,
+            remark = uri.fragment?.let { decodeComponent(it) }.orEmpty().ifBlank { host },
+            // The client secret arrives in the userinfo on every variant seen.
+            password = decodeComponent(uri.userInfo.orEmpty()),
+            publicKey = decodeComponent(q("publickey").ifBlank { q("public_key") }.ifBlank { q("pbk") }),
+            localAddress = decodeComponent(q("address").ifBlank { q("ip") }),
+            reserved = q("reserved"),
+            network = "udp",
             raw = link
         )
     }

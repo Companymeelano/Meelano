@@ -29,6 +29,12 @@ object XrayConfigBuilder {
     fun isSupported(endpoint: ProxyEndpoint): Boolean = when (endpoint.protocol) {
         Protocol.VLESS, Protocol.VMESS, Protocol.TROJAN,
         Protocol.SHADOWSOCKS, Protocol.SOCKS5 -> true
+        // The bundled core carries these natively — the Xray source tree has
+        // client.go for both, so they are real dialers rather than server-only.
+        Protocol.HYSTERIA2, Protocol.WIREGUARD -> true
+        // TUIC has no Xray outbound. Left explicit so the reason is on record
+        // rather than being swallowed by a catch-all.
+        Protocol.TUIC -> false
         else -> false
     }
 
@@ -138,7 +144,12 @@ object XrayConfigBuilder {
             .put("protocol", xrayProtocolName(endpoint.protocol))
 
         outbound.put("settings", buildProtocolSettings(endpoint))
-        outbound.put("streamSettings", buildStreamSettings(endpoint))
+
+        // WireGuard and Hysteria2 carry their own transport and reject a
+        // streamSettings block, so only the stream-based protocols get one.
+        if (usesStreamSettings(endpoint.protocol)) {
+            outbound.put("streamSettings", buildStreamSettings(endpoint))
+        }
         outbound.put(
             "mux",
             // Multiplexing hurts more than it helps on the transports we use and
@@ -148,12 +159,20 @@ object XrayConfigBuilder {
         return outbound
     }
 
+    /** Protocols layered over Xray's pluggable transports. */
+    private fun usesStreamSettings(protocol: Protocol): Boolean = when (protocol) {
+        Protocol.WIREGUARD, Protocol.HYSTERIA2 -> false
+        else -> true
+    }
+
     private fun xrayProtocolName(protocol: Protocol): String = when (protocol) {
         Protocol.VLESS -> "vless"
         Protocol.VMESS -> "vmess"
         Protocol.TROJAN -> "trojan"
         Protocol.SHADOWSOCKS -> "shadowsocks"
         Protocol.SOCKS5 -> "socks"
+        Protocol.HYSTERIA2 -> "hysteria2"
+        Protocol.WIREGUARD -> "wireguard"
         // Xray has no Hysteria2 outbound; callers must gate on isSupported.
         else -> "freedom"
     }
@@ -245,6 +264,59 @@ object XrayConfigBuilder {
                     }
             )
         )
+
+        Protocol.HYSTERIA2 -> JSONObject().put(
+            "servers",
+            JSONArray().put(
+                JSONObject()
+                    .put("address", endpoint.host)
+                    .put("port", endpoint.port)
+                    // Hysteria2 authenticates with a single secret, which the
+                    // parser puts in password regardless of URI shape.
+                    .put("password", endpoint.password.ifBlank { endpoint.userId })
+            )
+        )
+
+        Protocol.WIREGUARD -> JSONObject()
+            .put("secretKey", endpoint.password)
+            .put(
+                "address",
+                JSONArray().apply {
+                    val addresses = endpoint.localAddress
+                        .split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                    // A tunnel with no address cannot route; fall back to the
+                    // conventional defaults rather than emitting an empty list.
+                    if (addresses.isEmpty()) {
+                        put("172.16.0.2/32")
+                    } else {
+                        addresses.forEach { put(it) }
+                    }
+                }
+            )
+            .put(
+                "peers",
+                JSONArray().put(
+                    JSONObject()
+                        .put("publicKey", endpoint.publicKey)
+                        .put("endpoint", "${endpoint.host}:${endpoint.port}")
+                        .put("allowedIPs", JSONArray().put("0.0.0.0/0").put("::/0"))
+                        .apply {
+                            if (endpoint.reserved.isNotBlank()) {
+                                put(
+                                    "reserved",
+                                    JSONArray().apply {
+                                        endpoint.reserved.split(",")
+                                            .mapNotNull { it.trim().toIntOrNull() }
+                                            .forEach { put(it) }
+                                    }
+                                )
+                            }
+                        }
+                )
+            )
+            .put("mtu", 1420)
 
         else -> JSONObject()
     }
