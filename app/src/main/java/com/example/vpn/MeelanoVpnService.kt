@@ -12,6 +12,8 @@ import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
 import com.example.core.ConfigParser
+import com.example.core.FailureDiagnosis
+import com.example.core.PingTester
 import com.example.core.ProxyEndpoint
 import com.example.data.model.NetworkLiveStats
 import com.example.data.model.RoutingMode
@@ -75,6 +77,10 @@ class MeelanoVpnService : VpnService() {
         private val _lastError = MutableStateFlow<String?>(null)
         val lastError: StateFlow<String?> = _lastError.asStateFlow()
 
+        /** Structured view of the last failure, for the UI to act on. */
+        private val _lastDiagnosis = MutableStateFlow<FailureDiagnosis.Result?>(null)
+        val lastDiagnosis: StateFlow<FailureDiagnosis.Result?> = _lastDiagnosis.asStateFlow()
+
         private val _logs = MutableStateFlow<List<String>>(
             listOf(
                 "[SYSTEM] MeeLano Tunnel core initialised",
@@ -102,6 +108,9 @@ class MeelanoVpnService : VpnService() {
     private var udpNat: UdpNat? = null
     private var stack: TcpStack? = null
     private var healthMonitor: HealthMonitor? = null
+
+    /** Whether plain TCP reached the node, used to tell "gone" from "blocked". */
+    private var lastTcpReachable = false
 
     /**
      * Set when the user explicitly disconnects, so the system does not resurrect
@@ -192,6 +201,7 @@ class MeelanoVpnService : VpnService() {
             _connectionState.value = VpnConnectionState.CONNECTING
         }
         _lastError.value = null
+        _lastDiagnosis.value = null
         activeServerName = request.serverName
         startForeground(NOTIFICATION_ID, createNotification("در حال برقراری تونل…", request.serverName))
 
@@ -204,6 +214,11 @@ class MeelanoVpnService : VpnService() {
                     return@launch
                 }
                 activeEndpoint = endpoint
+
+                // A plain TCP probe first: knowing whether the port answered is
+                // what lets a later failure be reported as "blocked" rather than
+                // the much vaguer "unreachable".
+                lastTcpReachable = PingTester.ping(endpoint.host, endpoint.port) { protect(it) } > 0
                 log(
                     if (request.whiteLabel) {
                         "Endpoint resolved → ${request.serverName} · ${endpoint.displayProtocol}"
@@ -296,9 +311,13 @@ class MeelanoVpnService : VpnService() {
 
                 if (useXray) {
                     // The core owns the descriptor and pumps packets itself, so
-                    // there is no userspace loop to run — just stay alive until
-                    // the service is torn down.
+                    // there is no userspace packet loop to run. Statistics and
+                    // health monitoring still have to run, though: they used to
+                    // live inside runPacketLoop, which meant the default engine
+                    // had neither traffic counters nor degradation detection.
                     log("Tunnel handed to the Xray core.")
+                    startXrayStatsLoop()
+                    startXrayHealthMonitor()
                     awaitCancellation()
                 } else {
                     runPacketLoop(descriptor, request)
@@ -393,7 +412,16 @@ class MeelanoVpnService : VpnService() {
         // Detect a tunnel that is "connected" but no longer carrying traffic.
         healthMonitor = HealthMonitor(
             scope = serviceScope,
-            stack = { stack },
+            sample = {
+                stack?.let {
+                    HealthMonitor.Sample(
+                        opened = it.totalOpened,
+                        failed = it.totalFailed,
+                        bytesDown = it.bytesDown.get(),
+                        bytesUp = it.bytesUp.get()
+                    )
+                }
+            },
             onDegraded = { reason ->
                 log("Tunnel unhealthy: $reason — reporting failure for failover")
                 _lastError.value = "کیفیت اتصال افت کرد ($reason)"
@@ -458,6 +486,62 @@ class MeelanoVpnService : VpnService() {
         }
     }
 
+    /**
+     * Traffic accounting for the Xray path.
+     *
+     * TrafficCounter falls back to the kernel's per-uid byte counters, which
+     * count everything the core sends and receives, so this reports real
+     * throughput even though no packet passes through our own code.
+     */
+    private fun startXrayStatsLoop() {
+        statsJob?.cancel()
+        statsJob = serviceScope.launch {
+            val history = ArrayDeque<Float>()
+            while (isActive && _connectionState.value == VpnConnectionState.CONNECTED) {
+                delay(1000)
+                val trafficCounter = counter ?: continue
+                val (down, up) = trafficCounter.sampleSpeedsMbps()
+                history.addLast(down)
+                if (history.size > 24) history.removeFirst()
+
+                _liveStats.value = _liveStats.value.copy(
+                    downloadMbps = round1(down),
+                    uploadMbps = round1(up),
+                    totalDownloadedMb = round1(TrafficCounter.bytesToMb(trafficCounter.totalRxBytes())),
+                    totalUploadedMb = round1(TrafficCounter.bytesToMb(trafficCounter.totalTxBytes())),
+                    speedHistory = history.toList(),
+                    uptimeSeconds = ((System.currentTimeMillis() - sessionStartedAt) / 1000).toInt()
+                )
+            }
+        }
+    }
+
+    /** Degradation detection for the Xray path, judged on throughput. */
+    private fun startXrayHealthMonitor() {
+        healthMonitor?.stop()
+        healthMonitor = HealthMonitor(
+            scope = serviceScope,
+            sample = {
+                counter?.let {
+                    HealthMonitor.Sample(
+                        // The core exposes no flow table, so opened stays 0 and
+                        // the monitor judges on bytes alone.
+                        opened = 0L,
+                        failed = 0L,
+                        bytesDown = it.totalRxBytes(),
+                        bytesUp = it.totalTxBytes()
+                    )
+                }
+            },
+            onDegraded = { reason ->
+                log("Tunnel unhealthy: $reason — reporting failure for failover")
+                _lastError.value = "کیفیت اتصال افت کرد ($reason)"
+                _connectionState.value = VpnConnectionState.FAILED
+            },
+            onLog = { log(it) }
+        ).also { it.start() }
+    }
+
     private fun startStatsLoop(dnsRelay: DnsRelay, nat: UdpNat) {
         statsJob?.cancel()
         statsJob = serviceScope.launch {
@@ -486,9 +570,15 @@ class MeelanoVpnService : VpnService() {
 
     private fun fail(reason: String) {
         log("ERROR · $reason")
-        _lastError.value = reason
+
+        // Report a cause and a remedy rather than a raw exception. The message
+        // shown to the user is what determines whether they try another server,
+        // check their connection, or give up on the app entirely.
+        val diagnosis = FailureDiagnosis.diagnose(reason, tcpReachable = lastTcpReachable)
+        _lastDiagnosis.value = diagnosis
+        _lastError.value = "${diagnosis.summary}\n${diagnosis.advice}"
         _connectionState.value = VpnConnectionState.FAILED
-        notifyStatus(reason, activeServerName)
+        notifyStatus(diagnosis.summary, activeServerName)
         teardown(notifyState = false)
         serviceScope.launch {
             delay(4000)

@@ -369,6 +369,17 @@ class MainViewModel(
 
     private suspend fun failover() {
         val context = appContext ?: return
+
+        // Some faults repeat on every node — no VPN permission, no internet.
+        // Cycling the whole list for those wastes time and battery and buries
+        // the real message under a stream of retry toasts.
+        val diagnosis = MeelanoVpnService.lastDiagnosis.value
+        if (diagnosis != null && !diagnosis.tryAnotherServer) {
+            MeelanoVpnService.log("Failover skipped: ${diagnosis.summary}")
+            _toast.value = diagnosis.advice
+            return
+        }
+
         isFailingOver = true
         try {
             triedServerIds.add(activeServer.value.id)
