@@ -43,10 +43,16 @@ jobs:
       - name: Report build output
         if: always()
         run: |
+          grep -E "^e: |error:|FAILED|Unresolved|AssertionError" /tmp/build.log \
+            | head -40 \
+            | while IFS= read -r line; do
+                clean=$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g')
+                echo "::error::$clean"
+              done
           {
             echo '### Build output'
             echo '```'
-            grep -E "^e: |^w: |error:|FAILED|Unresolved|Caused by|expected|AssertionError|Tests? " /tmp/build.log | head -120 || tail -80 /tmp/build.log
+            tail -120 /tmp/build.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
