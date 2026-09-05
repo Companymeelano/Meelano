@@ -131,7 +131,13 @@ class XrayConfigBuilderTest {
         for (i in 0 until rules.length()) {
             val rule = rules.getJSONObject(i)
             if (rule.optString("outboundTag") == "direct") {
-                val ips = rule.optJSONArray("ip")?.toString().orEmpty()
+                // Read the entries rather than the serialised array: JSONObject
+                // escapes forward slashes, so "192.168.0.0/16" appears as
+                // "192.168.0.0\/16" in toString() and a substring match fails.
+                val array = rule.optJSONArray("ip")
+                val ips = buildList {
+                    for (j in 0 until (array?.length() ?: 0)) add(array!!.getString(j))
+                }
                 if (ips.contains("geoip:private") && ips.contains("192.168.0.0/16")) {
                     sawPrivateDirect = true
                 }
