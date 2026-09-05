@@ -177,6 +177,30 @@ class MainViewModel(
     private fun watchForDrops() {
         viewModelScope.launch {
             connectionState.collect { state ->
+                // Watchdog: never let the UI sit in a transient state forever.
+                // The service now caps its own handshake, but a wedged socket or
+                // a missed callback must not leave the user staring at "در حال
+                // اتصال" with no way forward.
+                if (state == VpnConnectionState.CONNECTING ||
+                    state == VpnConnectionState.RECONNECTING
+                ) {
+                    val stamp = ++connectAttempt
+                    viewModelScope.launch {
+                        delay(CONNECT_WATCHDOG_MS)
+                        val stillStuck = connectAttempt == stamp &&
+                            (connectionState.value == VpnConnectionState.CONNECTING ||
+                                connectionState.value == VpnConnectionState.RECONNECTING)
+                        if (stillStuck) {
+                            MeelanoVpnService.log(
+                                "Watchdog: still connecting after " +
+                                    "${CONNECT_WATCHDOG_MS / 1000}s — aborting"
+                            )
+                            _toast.value = "اتصال بیش از حد طول کشید؛ سرور دیگری را امتحان کنید"
+                            appContext?.let { stopVpn(it) }
+                        }
+                    }
+                }
+
                 // Only forget the blacklist once a tunnel has held long enough to
                 // be real. Clearing it the instant CONNECTED appears let the
                 // cascade re-dial the very same dead node seconds later, which is
@@ -201,6 +225,9 @@ class MainViewModel(
     private var isFailingOver = false
     private val triedServerIds = mutableSetOf<String>()
     private var connectedSince = 0L
+
+    /** Bumped on every connect attempt so a stale watchdog cannot fire. */
+    private var connectAttempt = 0L
 
     private suspend fun failover() {
         val context = appContext ?: return
@@ -476,5 +503,8 @@ class MainViewModel(
     private companion object {
         /** How long a tunnel must hold before we trust it and reset failover. */
         const val STABLE_CONNECTION_MS = 15_000L
+
+        /** Upper bound on any single connect attempt before the UI gives up. */
+        const val CONNECT_WATCHDOG_MS = 25_000L
     }
 }

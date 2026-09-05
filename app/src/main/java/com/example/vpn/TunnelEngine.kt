@@ -7,6 +7,7 @@ import com.example.vpn.proto.Destination
 import com.example.vpn.proto.OutboundFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.Socket
 
 /**
@@ -38,6 +39,9 @@ object TunnelEngine {
         val payloadVerified: Boolean = false
     )
 
+    /** Nothing genuinely usable completes a handshake more slowly than this. */
+    private const val HANDSHAKE_TIMEOUT_MS = 12_000L
+
     suspend fun handshake(
         endpoint: ProxyEndpoint,
         protect: (Socket) -> Boolean
@@ -57,6 +61,14 @@ object TunnelEngine {
         var negotiated = "TCP"
         var cipher = "none"
 
+        // Hard ceiling on the whole handshake.
+        //
+        // Each individual read is bounded by the socket's 60s SO_TIMEOUT, but a
+        // node that accepts TCP and then stays silent — very common among dead
+        // free nodes — would pin the UI in "connecting" for a full minute with
+        // nothing happening. Nothing usable takes this long, so cap the entire
+        // exchange and report a clean failure rather than hanging.
+        val timed = withTimeoutOrNull(HANDSHAKE_TIMEOUT_MS) {
         try {
             // A real protocol tunnel to a real destination.
 
@@ -77,7 +89,7 @@ object TunnelEngine {
             val latency = (System.currentTimeMillis() - started).toInt()
 
             if (read <= 0) {
-                return@withContext HandshakeResult(
+                return@withTimeoutOrNull HandshakeResult(
                     success = false,
                     latencyMs = PingTester.UNREACHABLE,
                     negotiatedProtocol = "-",
@@ -100,7 +112,7 @@ object TunnelEngine {
 
             val reply = String(buffer, 0, read, Charsets.US_ASCII)
             if (!reply.startsWith("HTTP/")) {
-                return@withContext HandshakeResult(
+                return@withTimeoutOrNull HandshakeResult(
                     success = false,
                     latencyMs = latency,
                     negotiatedProtocol = "-",
@@ -127,6 +139,15 @@ object TunnelEngine {
         } finally {
             runCatching { outbound?.close() }
         }
+        }
+
+        timed ?: HandshakeResult(
+            success = false,
+            latencyMs = PingTester.UNREACHABLE,
+            negotiatedProtocol = "-",
+            cipherSuite = "-",
+            error = "زمان دست‌دادن به پایان رسید (سرور پاسخ نداد)"
+        )
     }
 
     private fun describeTransport(endpoint: ProxyEndpoint, negotiated: String): String =

@@ -32,19 +32,19 @@ val MeelanoGreenDark = Color(0xFF00B248)
 val MeelanoGoldVip = Color(0xFFFFC53D)
 val MeelanoGoldVipDark = Color(0xFFFF8F00)
 val MeelanoRedKillSwitch = Color(0xFFFF3B5C)
-val MeelanoPurpleActive = Color(0xFF7C4DFF)
+val MeelanoPurpleActive = Color(0xFF8B5CFF)
 val MeelanoPurpleDeep = Color(0xFF4A3B7E)
-val MeelanoMagenta = Color(0xFFFF4DD8)
-val MeelanoTeal = Color(0xFF1DE9B6)
-val MeelanoRose = Color(0xFFFF6E9C)
-val MeelanoAmber = Color(0xFFFFB74D)
-val MeelanoIndigo = Color(0xFF536DFE)
-val MeelanoAqua = Color(0xFF64FFDA)
+val MeelanoMagenta = Color(0xFFFF3DD4)
+val MeelanoTeal = Color(0xFF00F5C4)
+val MeelanoRose = Color(0xFFFF5C8A)
+val MeelanoAmber = Color(0xFFFFA62B)
+val MeelanoIndigo = Color(0xFF6C5CFF)
+val MeelanoAqua = Color(0xFF5CFFE1)
 
 // ---- Text ----
 val TextPrimary = Color(0xFFF2F7FF)
-val TextSecondary = Color(0xFF8FA3BF)
-val TextMuted = Color(0xFF5B6E8A)
+val TextSecondary = Color(0xFF9FB2D4)
+val TextMuted = Color(0xFF6D7EA3)
 
 // ---- Status ----
 val PingGreen = Color(0xFF00E676)
@@ -61,7 +61,9 @@ enum class AccentPreset(val key: String, val label: String, val primary: Color, 
     VIOLET("violet", "بنفش کهکشانی", MeelanoPurpleActive, MeelanoMagenta),
     GOLD("gold", "طلایی VIP", MeelanoGoldVip, MeelanoGoldVipDark),
     SUNSET("sunset", "غروب", MeelanoRose, MeelanoAmber),
-    AURORA("aurora", "شفق قطبی", MeelanoAqua, MeelanoIndigo);
+    AURORA("aurora", "شفق قطبی", MeelanoAqua, MeelanoIndigo),
+    PLASMA("plasma", "پلاسما", Color(0xFFFF4D6D), Color(0xFF7B2FFF)),
+    ICE("ice", "یخ قطبی", Color(0xFF7FE3FF), Color(0xFFB8C6FF));
 
     companion object {
         fun of(key: String) = entries.firstOrNull { it.key == key } ?: SIGNATURE

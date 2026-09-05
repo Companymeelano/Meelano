@@ -55,7 +55,8 @@ fun ServerScanOverlay(
     secondary: Color,
     modifier: Modifier = Modifier,
     title: String = "در حال یافتن بهترین مسیر",
-    caption: String = "تست هم‌زمان تمام نودها…"
+    caption: String = "تست هم‌زمان تمام نودها…",
+    progress: Float? = null
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -66,11 +67,12 @@ fun ServerScanOverlay(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0E102A).copy(alpha = 0.90f)),
+                .background(Color(0xFF061029).copy(alpha = 0.93f)),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                RadarSweep(accent = accent, secondary = secondary)
+                // A real perspective-projected globe rather than a flat spinner.
+                HoloGlobeLoader(accent = accent, secondary = secondary)
 
                 Spacer(Modifier.height(26.dp))
 
@@ -90,7 +92,17 @@ fun ServerScanOverlay(
                 )
 
                 Spacer(Modifier.height(18.dp))
-                ScanningDots(accent)
+                if (progress != null) {
+                    Box(Modifier.width(190.dp)) {
+                        GlowProgressBar(
+                            fraction = progress,
+                            accent = accent,
+                            secondary = secondary
+                        )
+                    }
+                } else {
+                    ScanningDots(accent)
+                }
             }
         }
     }

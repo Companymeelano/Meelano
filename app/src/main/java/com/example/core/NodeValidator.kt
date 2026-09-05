@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Proves a node can genuinely carry traffic — not merely that its port is open.
@@ -49,27 +50,39 @@ object NodeValidator {
      */
     suspend fun validateAll(
         endpoints: List<ProxyEndpoint>,
-        parallelism: Int = 16,
-        probeTimeoutMs: Long = 6_000,
+        parallelism: Int = 24,
+        probeTimeoutMs: Long = 4_000,
+        target: Int = Int.MAX_VALUE,
         protect: (Socket) -> Boolean = { true },
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): List<Result> = coroutineScope {
         val gate = Semaphore(parallelism)
-        var completed = 0
+        val completed = AtomicInteger()
+        val passed = AtomicInteger()
         val total = endpoints.size
 
         val jobs = endpoints.map { endpoint ->
             async(Dispatchers.IO) {
-                val result = gate.withPermit { validate(endpoint, probeTimeoutMs, protect) }
-                synchronized(this@coroutineScope) {
-                    completed++
-                    onProgress(completed, total)
+                // Stop paying for probes once enough nodes have proven themselves.
+                // Validating all 100 candidates when the user only sees 20 was the
+                // main reason a refresh took the better part of a minute.
+                if (passed.get() >= target) {
+                    onProgress(completed.incrementAndGet(), total)
+                    return@async null
                 }
+
+                val result = gate.withPermit {
+                    if (passed.get() >= target) null
+                    else validate(endpoint, probeTimeoutMs, protect)
+                }
+                if (result?.working == true) passed.incrementAndGet()
+                onProgress(completed.incrementAndGet(), total)
                 result
             }
         }
 
         jobs.awaitAll()
+            .filterNotNull()
             .filter { it.working }
             .sortedBy { it.latencyMs }
     }

@@ -126,6 +126,7 @@ fun MainDashboardScreen(
     val scrollState = rememberScrollState()
 
     val isTestingPing by viewModel.isTestingPing.collectAsStateWithLifecycle()
+    val refreshStage by viewModel.updateProgress.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val liveStats by viewModel.liveStats.collectAsStateWithLifecycle()
     val activeServer by viewModel.activeServer.collectAsStateWithLifecycle()
@@ -295,10 +296,19 @@ fun MainDashboardScreen(
             }
 
             // Full-screen "finding the best route" experience.
+            // Shown for the ping sweep and for the multi-stage subscription
+            // refresh, which is the long one the user actually waits on.
             ServerScanOverlay(
-                visible = isTestingPing,
+                visible = isTestingPing || refreshStage != null,
                 accent = accent,
-                secondary = secondary
+                secondary = secondary,
+                title = refreshStage?.stage ?: "در حال یافتن بهترین مسیر",
+                caption = if (refreshStage != null) {
+                    "${refreshStage!!.done} از ${refreshStage!!.total}"
+                } else {
+                    "تست هم‌زمان تمام نودها…"
+                },
+                progress = refreshStage?.fraction
             )
 
             Modals(

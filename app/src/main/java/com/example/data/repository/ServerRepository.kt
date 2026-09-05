@@ -248,7 +248,7 @@ class ServerRepository(
                 }
                     .sortedBy { it.second }
                     // Only the most responsive candidates earn a full handshake.
-                    .take(keep * 5)
+                    .take(keep * 4)
             }
             val reachableEndpoints = reachable.map { it.first }
 
@@ -265,8 +265,10 @@ class ServerRepository(
             _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی ${reachableEndpoints.size} نود…", 0, reachable.size)
             val validated = NodeValidator.validateAll(
                 endpoints = reachableEndpoints,
-                parallelism = 12,
-                probeTimeoutMs = 6_000,
+                parallelism = 24,
+                probeTimeoutMs = 4_000,
+                // Once we have comfortably more than the user will see, stop.
+                target = keep + 6,
                 onProgress = { done, total ->
                     _updateProgress.value = UpdateProgress("اعتبارسنجی واقعی…", done, total)
                 }
