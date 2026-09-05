@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.ui.theme.MeelanoBgMid
 import com.example.ui.theme.MeelanoSurfaceCard
 import com.example.ui.theme.MeelanoSurfaceCardBorder
 
@@ -28,6 +30,8 @@ fun GlassCard(
     accent: Color? = null,
     padding: Dp = 14.dp,
     onClick: (() -> Unit)? = null,
+    /** Supply one to drive custom press feedback from the caller. */
+    interactionSource: MutableInteractionSource? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     val shape = RoundedCornerShape(corner)
@@ -40,7 +44,7 @@ fun GlassCard(
             )
         )
     } else {
-        Brush.linearGradient(listOf(MeelanoSurfaceCardBorder, Color(0xFF13203A)))
+        Brush.linearGradient(listOf(MeelanoSurfaceCardBorder, MeelanoBgMid))
     }
 
     Box(
@@ -49,7 +53,21 @@ fun GlassCard(
             .background(MeelanoSurfaceCard.copy(alpha = 0.82f), shape)
             .background(glassBrush(accent ?: MeelanoSurfaceCardBorder), shape)
             .border(1.dp, borderBrush, shape)
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
+            .then(
+                if (onClick != null) {
+                    if (interactionSource != null) {
+                        Modifier.clickable(
+                            interactionSource = interactionSource,
+                            indication = null,
+                            onClick = onClick
+                        )
+                    } else {
+                        Modifier.clickable { onClick() }
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .padding(padding),
         content = content
     )

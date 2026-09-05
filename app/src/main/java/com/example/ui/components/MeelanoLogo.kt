@@ -76,7 +76,7 @@ fun MeelanoHexagonLogo(
             drawPath(
                 path = hexPath,
                 brush = Brush.linearGradient(
-                    colors = listOf(Color(0xFF1E3A68), Color(0xFF0A1120)),
+                    colors = listOf(Color(0xFF2A2F5C), Color(0xFF141634)),
                     start = Offset(center.x - radius, center.y - radius),
                     end = Offset(center.x + radius, center.y + radius)
                 ),

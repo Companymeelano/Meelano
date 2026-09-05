@@ -9,6 +9,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -801,18 +806,44 @@ private fun ToolCard(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    GlassCard(modifier = modifier, corner = 14.dp, padding = 12.dp, onClick = onClick) {
+    // Springy press feedback: the card dips and its icon tile lifts, which makes
+    // every tap feel physical instead of instantaneous.
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.96f else 1f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 620f),
+        label = "toolPress"
+    )
+    val iconGlow by animateFloatAsState(
+        targetValue = if (pressed) 0.34f else 0.15f,
+        animationSpec = tween(180),
+        label = "toolGlow"
+    )
+
+    GlassCard(
+        modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale },
+        corner = Spacing.CornerSmall,
+        padding = 12.dp,
+        interactionSource = interaction,
+        onClick = onClick
+    ) {
         Column {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(tint.copy(alpha = 0.15f)),
+                    .size(34.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(tint.copy(alpha = iconGlow + 0.08f), tint.copy(alpha = iconGlow))
+                        )
+                    )
+                    .border(1.dp, tint.copy(alpha = 0.22f), RoundedCornerShape(11.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(icon, null, tint = tint, modifier = Modifier.size(17.dp))
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Spacing.Small))
             Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
             Text(subtitle, fontSize = 9.sp, color = TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
