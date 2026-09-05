@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -85,6 +85,44 @@ jobs:
           name: meelano-tunnel-release
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
+
+      - name: Rename APKs for distribution
+        run: |
+          mkdir -p dist
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts | head -1)
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          cp app/build/outputs/apk/debug/*.apk    "dist/MeeLano-Tunnel-v${VERSION}-debug.apk"
+          cp app/build/outputs/apk/release/*.apk  "dist/MeeLano-Tunnel-v${VERSION}-release.apk" 2>/dev/null || true
+          cd dist && sha256sum *.apk > SHA256SUMS.txt && ls -la
+
+      - name: Publish GitHub Release with installable APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}-build${{ github.run_number }}
+          name: MeeLano Tunnel v${{ env.APP_VERSION }} (build ${{ github.run_number }})
+          body: |
+            ## MeeLano Tunnel v${{ env.APP_VERSION }}
+
+            نسخهٔ نهایی و قابل نصب روی اندروید.
+
+            **دانلود و نصب:** فایل `MeeLano-Tunnel-v${{ env.APP_VERSION }}-release.apk` را
+            روی گوشی دانلود کنید، «نصب از منابع ناشناس» را برای مرورگر فعال کنید و نصب کنید.
+            هنگام اولین اتصال، اندروید مجوز VPN می‌خواهد — تأیید کنید.
+
+            | فایل | توضیح |
+            |---|---|
+            | `…-release.apk` | نسخهٔ اصلی برای نصب روی گوشی |
+            | `…-debug.apk` | نسخهٔ توسعه (قابل نصب همزمان، پسوند بستهٔ `.debug`) |
+            | `SHA256SUMS.txt` | جمع کنترلی برای بررسی صحت فایل |
+
+            پین‌کد پیش‌فرض قفل برنامه: **1234**
+
+            Commit: ${{ github.sha }}
+          files: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
+          draft: false
+          prerelease: false
 
       - name: Upload test reports
         if: always()
