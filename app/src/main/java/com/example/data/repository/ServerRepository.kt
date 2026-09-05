@@ -26,7 +26,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.Cache
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
+import okhttp3.Protocol as HttpProtocol
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -64,7 +64,7 @@ class ServerRepository(
         .callTimeout(35, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         // HTTP/2 lets several mirror requests share one connection.
-        .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
+        .protocols(listOf(HttpProtocol.HTTP_2, HttpProtocol.HTTP_1_1))
         // Mirrors are re-hit every refresh, so keeping sockets warm removes a
         // full TCP+TLS round trip from each subsequent fetch.
         .connectionPool(ConnectionPool(8, 5, TimeUnit.MINUTES))
