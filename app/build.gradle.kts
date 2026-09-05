@@ -31,8 +31,8 @@ android {
     applicationId = "com.aistudio.meelanotunnel.qkrv"
     minSdk = 24
     targetSdk = 36
-    versionCode = 11
-    versionName = "11.0"
+    versionCode = 12
+    versionName = "12.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -78,6 +78,19 @@ android {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
   }
+  // The Xray core bundles native libraries for four ABIs, which pushed a
+  // single universal APK to 166 MB. Splitting by ABI gets each device a build
+  // roughly a quarter of that, and the universal APK is kept so there is still
+  // one file that installs anywhere.
+  splits {
+    abi {
+      isEnable = true
+      reset()
+      include("arm64-v8a", "armeabi-v7a", "x86_64")
+      isUniversalApk = true
+    }
+  }
+
   buildFeatures {
     compose = true
     buildConfig = true

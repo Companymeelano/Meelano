@@ -122,8 +122,23 @@ jobs:
           mkdir -p dist
           VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts | head -1)
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
-          cp app/build/outputs/apk/debug/*.apk    "dist/MeeLano-Tunnel-v${VERSION}-debug.apk"
-          cp app/build/outputs/apk/release/*.apk  "dist/MeeLano-Tunnel-v${VERSION}-release.apk" 2>/dev/null || true
+          # ABI splits mean several APKs per build type. Copying "*.apk" onto a
+          # single name would silently keep whichever the shell listed last, so
+          # each variant is named explicitly and the universal build keeps the
+          # plain "-release" name that existing install instructions point at.
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            src=$(ls app/build/outputs/apk/release/*"${abi}"*.apk 2>/dev/null | head -1)
+            [ -n "$src" ] && cp "$src" "dist/MeeLano-Tunnel-v${VERSION}-${abi}.apk"
+          done
+
+          uni=$(ls app/build/outputs/apk/release/*universal*.apk 2>/dev/null | head -1)
+          [ -z "$uni" ] && uni=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1)
+          [ -n "$uni" ] && cp "$uni" "dist/MeeLano-Tunnel-v${VERSION}-release.apk"
+
+          dbg=$(ls app/build/outputs/apk/debug/*universal*.apk 2>/dev/null | head -1)
+          [ -z "$dbg" ] && dbg=$(ls app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
+          [ -n "$dbg" ] && cp "$dbg" "dist/MeeLano-Tunnel-v${VERSION}-debug.apk"
+
           cd dist && sha256sum *.apk > SHA256SUMS.txt && ls -la
 
       - name: Publish GitHub Release with installable APKs
@@ -136,9 +151,13 @@ jobs:
 
             نسخهٔ نهایی و قابل نصب روی اندروید.
 
-            **دانلود و نصب:** فایل `MeeLano-Tunnel-v${{ env.APP_VERSION }}-release.apk` را
-            روی گوشی دانلود کنید، «نصب از منابع ناشناس» را برای مرورگر فعال کنید و نصب کنید.
-            هنگام اولین اتصال، اندروید مجوز VPN می‌خواهد — تأیید کنید.
+            **دانلود و نصب:** فایل `MeeLano-Tunnel-v${{ env.APP_VERSION }}-arm64-v8a.apk`
+            را دانلود کنید — تقریباً همهٔ گوشی‌های امروزی arm64 هستند و این فایل
+            بسیار کوچک‌تر است. اگر مطمئن نیستید، `-release.apk` روی هر دستگاهی
+            نصب می‌شود ولی حجم بیشتری دارد.
+
+            «نصب از منابع ناشناس» را برای مرورگر فعال کنید. هنگام اولین اتصال،
+            اندروید مجوز VPN می‌خواهد — تأیید کنید.
 
             | فایل | توضیح |
             |---|---|
