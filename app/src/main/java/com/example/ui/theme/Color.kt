@@ -5,9 +5,9 @@ import androidx.compose.ui.graphics.Color
 // ---- Canvas ----
 // Sampled directly from the app icon so the shell and the launcher artwork read
 // as one object: deep indigo-navy rather than the previous neutral black.
-val MeelanoBgDark = Color(0xFF061029)          // icon top-left field
-val MeelanoBgDarkSecondary = Color(0xFF0D051A)  // icon bottom-right field
-val MeelanoBgMid = Color(0xFF1F1742)           // icon violet mid-field
+val MeelanoBgDark = Color(0xFF040A22)          // icon top-left cosmos
+val MeelanoBgDarkSecondary = Color(0xFF090418)  // icon bottom-right cosmos
+val MeelanoBgMid = Color(0xFF261149)           // icon violet nebula
 val MeelanoSurfaceCard = Color(0xFF181331)
 val MeelanoSurfaceCardBorder = Color(0xFF40526F) // icon's chrome bevel
 val MeelanoSurfaceElevated = Color(0xFF241B4E)
@@ -17,8 +17,8 @@ val MeelanoGlassTint = Color(0x14FFFFFF)
 // The icon's two signature lights: the cyan neon of the "M" and the violet that
 // wraps its right stroke. These now drive the default theme.
 // Same hues as the icon, saturated up for emissive on-screen use.
-val MeelanoIconCyan = Color(0xFF4EBCF1)        // neon M, cyan stroke
-val MeelanoIconViolet = Color(0xFF9A58F6)      // neon M, violet stroke
+val MeelanoIconCyan = Color(0xFF1FEAF7)        // neon M, cyan stroke
+val MeelanoIconViolet = Color(0xFFB44BFF)      // neon M, magenta stroke
 val MeelanoChrome = Color(0xFFC9D2E6)          // shield chrome highlight
 val MeelanoChromeDim = Color(0xFF3D4A72)       // shield chrome shadow
 val MeelanoIconGlowCyan = Color(0xFF6FD9FF)    // halo around the cyan stroke

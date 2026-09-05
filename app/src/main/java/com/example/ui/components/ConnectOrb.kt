@@ -468,7 +468,7 @@ private fun DrawScope.drawNeonM(centre: Offset, size: Float, glow: Float, connec
     }
 
     val strokeBrush = Brush.linearGradient(
-        listOf(Color(0xFF4EBCF1), Color(0xFF7FA3F8), Color(0xFF9A58F6)),
+        listOf(Color(0xFF1FEAF7), Color(0xFF7A9BFF), Color(0xFFB44BFF)),
         start = Offset(centre.x - halfWidth, centre.y),
         end = Offset(centre.x + halfWidth, centre.y)
     )

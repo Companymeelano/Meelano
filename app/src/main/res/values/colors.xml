@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="meelano_bg">#FF0E102A</color>
-    <color name="meelano_cyan">#FF4FD8F5</color>
+    <color name="meelano_bg">#FF040A22</color>
+    <color name="meelano_cyan">#FF1FEAF7</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 </resources>
