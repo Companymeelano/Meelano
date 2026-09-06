@@ -16,8 +16,7 @@ plugins {
  * The protocol engine is genuinely shared too: every outbound under
  * `vpn/proto/` is plain JVM (sockets, JSSE, no Android imports), so this build
  * compiles the real VLESS/VMess/Trojan/Shadowsocks/SOCKS5 implementations
- * straight from the app source tree. See the source set wiring below for
- * exactly which files are pulled in and why the list is explicit.
+ * straight from the app source tree.
  */
 
 kotlin {
@@ -26,37 +25,41 @@ kotlin {
 
 sourceSets {
     main {
-        kotlin {
+        java {
             // Share the engine with the Android app rather than forking it.
             //
-            // Only Android-free files are listed. ConfigParser, for instance, is
-            // deliberately excluded because it parses links with android.net.Uri;
-            // the desktop build has its own parser over java.net.URI that
-            // produces the same ProxyEndpoint. Keeping this list explicit means
-            // an Android import accidentally added upstream breaks the Windows
-            // build loudly at compile time instead of silently at runtime.
+            // Only Android-free files are listed. ConfigParser, for instance,
+            // is deliberately excluded because it parses links with
+            // android.net.Uri; the desktop build has its own parser over
+            // java.net.URI producing the same ProxyEndpoint. Keeping the list
+            // explicit means an Android import added upstream breaks the
+            // Windows build loudly at compile time, not silently at runtime.
             val shared = "../app/src/main/java/com/example"
+
             // The endpoint model and protocol enum: pure data, no imports.
             srcDir("$shared/core/portable")
-            // Every outbound: VLESS, VMess, Trojan, Shadowsocks, SOCKS5, plus
-            // the TLS/WebSocket transports. All plain JVM sockets and JSSE.
+
+            // Every outbound — VLESS, VMess, Trojan, Shadowsocks, SOCKS5 —
+            // plus the TLS and WebSocket transports. Plain sockets and JSSE.
             srcDir("$shared/vpn/proto")
+
             // Deliberately NOT vpn/stack: that is the userspace TCP/IP stack
-            // that reassembles packets from Android's TUN device. Windows has
-            // no TUN here — the desktop build proxies already-formed TCP
-            // streams — so including it would only drag in vpn/net and its
-            // Android dependencies for code that would never run.
+            // that reassembles packets from Android's TUN device. There is no
+            // TUN here — the desktop build proxies already-formed TCP streams —
+            // so it would only drag in vpn/net's Android dependencies for code
+            // that could never run.
         }
     }
 }
 
 dependencies {
+    // currentOs pulls in the Skiko native binaries for the build host.
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
     implementation(libs.kotlinx.coroutines.core)
-    // Swing interop is used for the tray icon and the native file chooser.
-    implementation(compose.desktop.common)
+    // Compose on desktop dispatches through Swing's event thread.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
 
     testImplementation(libs.junit)
 }
@@ -67,9 +70,9 @@ compose.desktop {
 
         nativeDistributions {
             // MSI is the installer Windows users expect: Add/Remove Programs,
-            // a Start-menu entry and a clean uninstall. EXE here would be a
-            // bare launcher with none of that.
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            // a Start-menu entry and a clean uninstall. A bare EXE would give
+            // none of that.
+            targetFormats(TargetFormat.Msi)
 
             packageName = "MeeLano Tunnel"
             packageVersion = "19.0.0"
@@ -85,7 +88,6 @@ compose.desktop {
                 "java.desktop",
                 "java.logging",
                 "java.naming",
-                "java.net.http",
                 "java.prefs",
                 "java.sql",
                 "jdk.crypto.ec",
@@ -96,19 +98,13 @@ compose.desktop {
                 iconFile.set(project.file("src/main/resources/icon.ico"))
                 // Stable UUID: an installer whose upgrade code changes between
                 // releases installs alongside the old version instead of
-                // replacing it, leaving users with two copies.
+                // replacing it, leaving the user with two copies.
                 upgradeUuid = "5D3B4E2A-91C7-4F86-A0D2-7E1B6C48F390"
                 menuGroup = "MeeLano"
                 perUserInstall = true
                 dirChooser = true
                 shortcut = true
             }
-        }
-
-        buildTypes.release.proguard {
-            // The engine reaches for classes reflectively in places; shrinking
-            // here buys little and risks a runtime failure in the tunnel.
-            isEnabled.set(false)
         }
     }
 }
