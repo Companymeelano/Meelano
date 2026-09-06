@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import com.example.core.ConfigParser
 import com.example.core.NodeValidator
 import com.example.core.PingTester
+import com.example.vpn.MeelanoVpnService
 import com.example.vpn.proto.OutboundFactory
 import com.example.vpn.xray.XrayConfigBuilder
 import com.example.core.Protocol
@@ -109,6 +110,9 @@ class ServerRepository(
 
         /** First backoff step; doubles per transient failure, capped at 8x. */
         const val RETRY_BASE_DELAY_MS = 400L
+
+        /** Largest subscription body worth reading into memory. */
+        const val MAX_SUBSCRIPTION_BYTES = 12L * 1024 * 1024
     }
 
     data class UpdateProgress(val stage: String, val done: Int, val total: Int) {
@@ -305,10 +309,21 @@ class ServerRepository(
 
             // Fetch sources in parallel — serially this took minutes when several
             // mirrors were blocked and each had to time out in turn.
+            // Note the runCatching inside each task. coroutineScope + awaitAll
+            // propagates the first failure and cancels every sibling, so one
+            // source throwing — an OOM on a huge feed, a malformed URL — aborted
+            // the whole refresh partway through and looked like a random
+            // disconnect. Each source must fail on its own.
             coroutineScope {
                 sources.mapIndexed { index, url ->
                     async(Dispatchers.IO) {
-                        val body = fetchWithMirrors(url)
+                        val body = runCatching { fetchWithMirrors(url) }
+                            .onFailure {
+                                MeelanoVpnService.log(
+                                    "Subscription source failed: ${it.message ?: "unknown"}"
+                                )
+                            }
+                            .getOrNull()
                         synchronized(endpoints) {
                             if (body != null) {
                                 reachedAnySource = true
@@ -500,7 +515,21 @@ class ServerRepository(
                         .build()
                 ).execute().use { response ->
                     when {
-                        response.isSuccessful -> Fetched(response.body?.string(), retry = false)
+                        response.isSuccessful -> {
+                            // Some aggregate feeds are 8 MB and more. Reading one
+                            // fully into a String on a low-memory device can throw
+                            // OutOfMemory, which used to abort the entire refresh.
+                            val body = response.body
+                            val length = body?.contentLength() ?: -1L
+                            if (length > MAX_SUBSCRIPTION_BYTES) {
+                                MeelanoVpnService.log(
+                                    "Skipping oversized subscription ($length bytes)"
+                                )
+                                Fetched(null, retry = false)
+                            } else {
+                                Fetched(body?.string(), retry = false)
+                            }
+                        }
                         // 5xx and 429 are transient; a blocked or missing mirror
                         // (403/404) will not improve by asking again.
                         response.code == 429 || response.code >= 500 ->

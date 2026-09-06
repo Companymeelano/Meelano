@@ -16,15 +16,3 @@
 local.properties
 .env
 debug.keystore
-my-upload-key.jks
-
-# Icon working files (sources kept, intermediates not)
-art/ic_bg_1024.png
-art/ic_fg_1024.png
-art/ic_legacy_1024.png
-art/preview_*.png
-
-# Xray core and geo data are fetched by CI, not committed (59 MB + 27 MB).
-app/libs/libv2ray.aar
-app/src/main/assets/geoip.dat
-app/src/main/assets/geosite.dat

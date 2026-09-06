@@ -312,7 +312,10 @@ class MeelanoVpnService : VpnService() {
                         endpoint = endpoint,
                         dnsPrimary = request.dnsPrimary,
                         dnsSecondary = request.dnsSecondary,
-                        bypassLan = request.routingMode != RoutingMode.GLOBAL
+                        bypassLan = request.routingMode != RoutingMode.GLOBAL,
+                        // Must match the interface we just built, or the core
+                        // fragments packets the TUN device cannot carry.
+                        tunMtu = MTU
                     )
                     val error = XrayCore.start(config, descriptor.fd) { status -> log("Xray: $status") }
                     if (error != null) {

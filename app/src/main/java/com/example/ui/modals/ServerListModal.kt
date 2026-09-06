@@ -1,6 +1,22 @@
 package com.example.ui.modals
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.background
 import com.example.ui.theme.Spacing
 import com.example.ui.components.GlowProgressBar
@@ -105,6 +121,7 @@ fun ServerListModal(
     onOpenImport: () -> Unit
 ) {
     val accent = LocalAccent.current.primary
+    val secondary = LocalAccent.current.secondary
     var tab by remember { mutableIntStateOf(0) }
     var pendingDelete by remember { mutableStateOf<VpnServer?>(null) }
 
@@ -223,63 +240,64 @@ fun ServerListModal(
 
                 Spacer(Modifier.height(10.dp))
 
-                // maintenance bar: keep the list clean without hunting row by row
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionChip(
-                        text = "حذف سرورهای خراب",
-                        icon = Icons.Default.DeleteSweep,
-                        color = MeelanoRedKillSwitch,
-                        modifier = Modifier.weight(1f),
-                        onClick = onDeleteUnreachable
-                    )
-                    ActionChip(
-                        text = "بازگردانی پیش‌فرض‌ها",
-                        icon = Icons.Default.Restore,
-                        color = TextSecondary,
-                        modifier = Modifier.weight(1f),
-                        onClick = onRestoreDeleted
-                    )
-                }
+                // One primary action, then a compact tool cluster.
+                //
+                // Previously four equal-weight chips spread over two rows, which
+                // made the common action (get servers) no more prominent than
+                // "restore defaults". Refresh and subscription-update were also
+                // separate buttons that ran the same pipeline.
+                PrimaryServerAction(
+                    tab = tab,
+                    isUpdating = isUpdating,
+                    isTestingPing = isTestingPing,
+                    accent = accent,
+                    secondary = secondary,
+                    onRefresh = onRefreshSubscriptions,
+                    onImport = onOpenImport
+                )
 
                 Spacer(Modifier.height(8.dp))
 
-                // action bar
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ActionChip(
-                        text = if (isTestingPing) "در حال تست…" else "تست پینگ",
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    ToolButton(
                         icon = Icons.Default.NetworkPing,
-                        color = accent,
+                        label = "تست پینگ",
+                        tint = accent,
                         loading = isTestingPing,
                         modifier = Modifier.weight(1f)
                     ) { onTestPing(scope) }
 
-                    if (tab == 1) {
-                        ActionChip(
-                            text = if (isUpdating) "به‌روزرسانی…" else "به‌روزرسانی",
-                            icon = Icons.Default.Refresh,
-                            color = MeelanoGreenSuccess,
-                            loading = isUpdating,
-                            modifier = Modifier.weight(1f)
-                        ) { onRefreshSubscriptions() }
-                    } else {
-                        ActionChip(
-                            text = "افزودن",
-                            icon = Icons.Default.Add,
-                            color = MeelanoGreenSuccess,
-                            modifier = Modifier.weight(1f)
-                        ) { onOpenImport() }
-                    }
-
-                    ActionChip(
-                        text = sort.label,
+                    ToolButton(
                         icon = Icons.Default.Sort,
-                        color = MeelanoGoldVip,
+                        label = sort.label,
+                        tint = MeelanoGoldVip,
                         modifier = Modifier.weight(1f)
                     ) {
                         val order = ServerSort.entries
                         onSortChange(order[(order.indexOf(sort) + 1) % order.size])
                     }
+
+                    ToolButton(
+                        icon = Icons.Default.DeleteSweep,
+                        label = "حذف خراب‌ها",
+                        tint = MeelanoRedKillSwitch,
+                        modifier = Modifier.weight(1f),
+                        onClick = onDeleteUnreachable
+                    )
+
+                    ToolButton(
+                        icon = Icons.Default.Restore,
+                        label = "بازگردانی",
+                        tint = TextSecondary,
+                        modifier = Modifier.weight(1f),
+                        onClick = onRestoreDeleted
+                    )
                 }
+
+                Spacer(Modifier.height(4.dp))
 
                 // The refresh runs in stages (fetch, reachability sweep, then the
                 // strict real-traffic validation); show which one is running.
@@ -620,5 +638,207 @@ private fun DeleteServerDialog(
                 }
             }
         }
+    }
+}
+
+/**
+ * The one action the user came here for, given the weight to match.
+ *
+ * Rendered as a raised slab with a lit bevel and a travelling sheen. While a
+ * refresh runs it becomes a live progress surface: the fill tracks real
+ * progress rather than looping, so a stalled fetch is visible instead of being
+ * masked by a spinner that animates forever.
+ */
+@Composable
+private fun PrimaryServerAction(
+    tab: Int,
+    isUpdating: Boolean,
+    isTestingPing: Boolean,
+    accent: Color,
+    secondary: Color,
+    onRefresh: () -> Unit,
+    onImport: () -> Unit
+) {
+    val busy = isUpdating || isTestingPing
+    val transition = rememberInfiniteTransition(label = "primary")
+    val sheen by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing)),
+        label = "sheen"
+    )
+
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val lift by animateFloatAsState(
+        targetValue = if (pressed) 0.3f else 1f,
+        animationSpec = tween(130),
+        label = "lift"
+    )
+
+    val label = when {
+        isUpdating -> "در حال دریافت سرورها…"
+        tab == 1 -> "دریافت و به‌روزرسانی سرورها"
+        else -> "افزودن کانفیگ"
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = !busy
+            ) { if (tab == 1) onRefresh() else onImport() }
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val corner = CornerRadius(15.dp.toPx(), 15.dp.toPx())
+
+            drawRoundRect(
+                color = Color.Black.copy(alpha = 0.42f * lift),
+                topLeft = Offset(0f, 4f * lift),
+                size = size,
+                cornerRadius = corner
+            )
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    listOf(accent.copy(alpha = 0.42f), secondary.copy(alpha = 0.26f)),
+                    start = Offset.Zero,
+                    end = Offset(size.width, size.height)
+                ),
+                cornerRadius = corner
+            )
+            val x = size.width * (sheen * 1.7f - 0.35f)
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    listOf(Color.Transparent, Color.White.copy(alpha = 0.13f), Color.Transparent),
+                    start = Offset(x - 80f, 0f),
+                    end = Offset(x + 80f, size.height)
+                ),
+                cornerRadius = corner
+            )
+            drawRoundRect(
+                brush = Brush.linearGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.40f),
+                        accent.copy(alpha = 0.18f),
+                        Color.Black.copy(alpha = 0.30f)
+                    ),
+                    start = Offset.Zero,
+                    end = Offset(size.width, size.height)
+                ),
+                cornerRadius = corner,
+                style = Stroke(width = 1.5f)
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                if (tab == 1) Icons.Default.CloudSync else Icons.Default.Add,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(17.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                label,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold
+            )
+        }
+    }
+}
+
+/** Compact secondary action: a small raised key with an icon and a caption. */
+@Composable
+private fun ToolButton(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    onClick: () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val lift by animateFloatAsState(
+        targetValue = if (pressed) 0.25f else 1f,
+        animationSpec = tween(120),
+        label = "toolLift"
+    )
+    val spin by rememberInfiniteTransition(label = "toolSpin").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)),
+        label = "spin"
+    )
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(vertical = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val r = size.minDimension / 2f
+                val c = Offset(r, r)
+                drawCircle(
+                    color = Color.Black.copy(alpha = 0.38f * lift),
+                    radius = r * 0.88f,
+                    center = Offset(c.x, c.y + 2.5f * lift)
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(tint.copy(alpha = 0.42f), tint.copy(alpha = 0.14f)),
+                        center = Offset(r * 0.66f, r * 0.58f),
+                        radius = r * 1.7f
+                    ),
+                    radius = r * 0.88f,
+                    center = c
+                )
+                drawCircle(
+                    brush = Brush.linearGradient(
+                        listOf(Color.White.copy(alpha = 0.42f), Color.Transparent),
+                        start = Offset.Zero,
+                        end = Offset(size.width, size.height)
+                    ),
+                    radius = r * 0.88f,
+                    center = c,
+                    style = Stroke(width = 1.2f)
+                )
+                // While busy, an arc sweeps the rim so the button reports its
+                // own state instead of looking inert.
+                if (loading) {
+                    drawArc(
+                        color = tint,
+                        startAngle = spin,
+                        sweepAngle = 90f,
+                        useCenter = false,
+                        topLeft = Offset(r * 0.12f, r * 0.12f),
+                        size = Size(r * 1.76f, r * 1.76f),
+                        style = Stroke(width = 2f, cap = StrokeCap.Round)
+                    )
+                }
+            }
+            Icon(icon, null, tint = Color.White.copy(alpha = 0.94f), modifier = Modifier.size(15.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label,
+            color = TextSecondary,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }

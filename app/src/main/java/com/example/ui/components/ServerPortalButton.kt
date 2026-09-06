@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.animation.core.EaseOutQuart
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -81,12 +82,31 @@ fun ServerPortalButton(
     onAutoSelect: () -> Unit
 ) {
     val transition = rememberInfiniteTransition(label = "portal")
-    val spin by transition.animateFloat(
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+
+    // Tapping spins the globe up and lights it, then it eases back down. The
+    // burst is driven by the press state rather than a one-shot animation so a
+    // rapid second tap re-energises it instead of queueing.
+    val tapEnergy by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = tween(if (pressed) 220 else 1400, easing = FastOutSlowInEasing),
+        label = "tapEnergy"
+    )
+    val baseSpin by transition.animateFloat(
         initialValue = 0f,
         targetValue = (2 * PI).toFloat(),
         animationSpec = infiniteRepeatable(tween(11000, easing = LinearEasing)),
         label = "spin"
     )
+    val burstSpin by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing)),
+        label = "burst"
+    )
+    // Blend the two rates so the acceleration reads as one continuous motion.
+    val spin = baseSpin + (burstSpin - baseSpin) * tapEnergy
     val shimmer by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -94,8 +114,6 @@ fun ServerPortalButton(
         label = "shimmer"
     )
 
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
     val press by animateFloatAsState(
         targetValue = if (pressed) 0.975f else 1f,
         animationSpec = tween(130, easing = EaseOutQuart),
@@ -174,14 +192,23 @@ fun ServerPortalButton(
             )
 
             // The globe, inset on the leading edge.
-            val globeCentre = Offset(size.width - 62.dp.toPx(), size.height * press / 2f)
-            drawMiniGlobe(globeCentre, 30.dp.toPx(), spin, accent, secondary)
+            // The globe sits on the leading (left) edge, filling the space the
+            // text column leaves empty instead of crowding the right side.
+            val globeCentre = Offset(56.dp.toPx(), size.height * press / 2f)
+            drawMiniGlobe(
+                centre = globeCentre,
+                radius = 34.dp.toPx(),
+                spin = spin,
+                accent = accent,
+                secondary = secondary,
+                energy = tapEnergy
+            )
         }
 
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = 18.dp, end = 104.dp),
+                .padding(start = 112.dp, end = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
@@ -276,7 +303,8 @@ private fun DrawScope.drawMiniGlobe(
     radius: Float,
     spin: Float,
     accent: Color,
-    secondary: Color
+    secondary: Color,
+    energy: Float
 ) {
     val tilt = -0.4f
     val camera = 2.8f
@@ -298,43 +326,53 @@ private fun DrawScope.drawMiniGlobe(
         )
     }
 
-    // Halo.
+    // Atmosphere. Brightens on tap so the globe visibly answers the touch.
+    val lift = 1f + 0.55f * energy
     drawCircle(
         brush = Brush.radialGradient(
-            listOf(accent.copy(alpha = 0.26f), Color.Transparent),
+            listOf(
+                accent.copy(alpha = 0.10f + 0.26f * energy),
+                secondary.copy(alpha = 0.07f + 0.12f * energy),
+                Color.Transparent
+            ),
             center = centre,
-            radius = radius * 1.9f
+            radius = radius * (1.9f + 0.35f * energy)
         ),
-        radius = radius * 1.9f,
+        radius = radius * (1.9f + 0.35f * energy),
         center = centre
     )
+
+    // Body: a lit sphere rather than a flat disc, shaded from the upper-left.
     drawCircle(
-        color = accent.copy(alpha = 0.34f),
+        brush = Brush.radialGradient(
+            listOf(
+                accent.copy(alpha = 0.26f * lift),
+                Color(0xFF1B1540).copy(alpha = 0.92f),
+                Color(0xFF090418)
+            ),
+            center = Offset(centre.x - radius * 0.36f, centre.y - radius * 0.40f),
+            radius = radius * 1.85f
+        ),
         radius = radius,
-        center = centre,
-        style = Stroke(width = 1.2f)
+        center = centre
     )
 
     // Latitude rings.
-    for (ring in 1 until 5) {
-        val phi = PI * ring / 5
-        val y = cos(phi).toFloat()
-        val rr = sin(phi).toFloat()
+    for (ring in 1 until 6) {
+        val phi = (PI * ring / 6).toFloat()
+        val y = cos(phi)
+        val rr = sin(phi)
         var prev: Triple<Offset, Float, Float>? = null
-        for (step in 0..30) {
-            val theta = 2 * PI * step / 30
-            val point = project(
-                (cos(theta) * rr).toFloat(),
-                y,
-                (sin(theta) * rr).toFloat()
-            )
+        for (step in 0..36) {
+            val theta = (2 * PI * step / 36).toFloat()
+            val point = project(cos(theta) * rr, y, sin(theta) * rr)
             prev?.let { from ->
                 val depth = (from.second + point.second) / 2f
                 drawLine(
-                    color = accent.copy(alpha = 0.06f + 0.34f * depth * depth),
+                    color = accent.copy(alpha = (0.05f + 0.34f * depth * depth) * lift),
                     start = from.first,
                     end = point.first,
-                    strokeWidth = 0.6f + 0.9f * depth
+                    strokeWidth = 0.6f + 1.0f * depth
                 )
             }
             prev = point
@@ -342,40 +380,70 @@ private fun DrawScope.drawMiniGlobe(
     }
 
     // Meridians.
-    for (m in 0 until 6) {
-        val theta = 2 * PI * m / 6
+    for (m in 0 until 7) {
+        val theta = (2 * PI * m / 7).toFloat()
         var prev: Triple<Offset, Float, Float>? = null
-        for (step in 0..24) {
-            val phi = PI * step / 24
-            val point = project(
-                (sin(phi) * cos(theta)).toFloat(),
-                cos(phi).toFloat(),
-                (sin(phi) * sin(theta)).toFloat()
-            )
+        for (step in 0..28) {
+            val phi = (PI * step / 28).toFloat()
+            val point = project(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
             prev?.let { from ->
                 val depth = (from.second + point.second) / 2f
                 drawLine(
-                    color = secondary.copy(alpha = 0.05f + 0.26f * depth * depth),
+                    color = secondary.copy(alpha = (0.04f + 0.26f * depth * depth) * lift),
                     start = from.first,
                     end = point.first,
-                    strokeWidth = 0.5f + 0.7f * depth
+                    strokeWidth = 0.5f + 0.8f * depth
                 )
             }
             prev = point
         }
     }
 
-    // A bead orbiting the equator, drawn last so it always reads on top.
-    val bead = project(cos(spin * 2f), 0.12f, sin(spin * 2f))
+    // Node markers, distributed so they never clump on one face.
+    val markers = 7
+    for (i in 0 until markers) {
+        val t = i.toFloat() / markers
+        val y = 1f - t * 2f
+        val rr = kotlin.math.sqrt((1f - y * y).coerceAtLeast(0f))
+        val theta = (i * 2.399f)
+        val (position, depth, perspective) = project(cos(theta) * rr, y, sin(theta) * rr)
+        // Far-side markers stay dim; near ones brighten with the tap.
+        drawCircle(
+            color = accent.copy(alpha = (0.12f + 0.55f * depth) * lift),
+            radius = (0.9f + 1.7f * depth) * perspective,
+            center = position
+        )
+    }
+
+    // Terminator, so the sphere reads as lit from one side.
     drawCircle(
-        color = accent.copy(alpha = 0.30f * bead.second),
-        radius = 6f * bead.third,
+        brush = Brush.radialGradient(
+            listOf(Color.Transparent, Color.Black.copy(alpha = 0.42f)),
+            center = Offset(centre.x - radius * 0.30f, centre.y - radius * 0.32f),
+            radius = radius * 1.5f
+        ),
+        radius = radius,
+        center = centre
+    )
+
+    // Rim light.
+    drawCircle(
+        color = accent.copy(alpha = 0.30f + 0.40f * energy),
+        radius = radius,
+        center = centre,
+        style = Stroke(width = 1.3f + 0.9f * energy)
+    )
+
+    // An orbiting bead, drawn last so it always reads on top.
+    val bead = project(cos(spin * 2f), 0.14f, sin(spin * 2f))
+    drawCircle(
+        color = accent.copy(alpha = (0.28f + 0.4f * energy) * bead.second),
+        radius = (5f + 4f * energy) * bead.third,
         center = bead.first
     )
     drawCircle(
         color = Color.White.copy(alpha = 0.45f + 0.5f * bead.second),
-        radius = 2f * bead.third,
-        center = bead.first,
-        style = Stroke(width = 2f, cap = StrokeCap.Round)
+        radius = 1.9f * bead.third,
+        center = bead.first
     )
 }

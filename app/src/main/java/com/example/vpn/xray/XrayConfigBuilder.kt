@@ -55,6 +55,8 @@ object XrayConfigBuilder {
         dnsSecondary: String = "8.8.8.8",
         bypassLan: Boolean = true,
         socksPort: Int = 10_808,
+        /** MTU of the VpnService interface; must match what the builder set. */
+        tunMtu: Int = 1500,
         enableLogging: Boolean = true
     ): String {
         val root = JSONObject()
@@ -67,7 +69,7 @@ object XrayConfigBuilder {
         )
 
         root.put("dns", buildDns(dnsPrimary, dnsSecondary))
-        root.put("inbounds", buildInbounds(socksPort))
+        root.put("inbounds", buildInbounds(socksPort, tunMtu, dnsPrimary, dnsSecondary))
         root.put("outbounds", buildOutbounds(endpoint))
         root.put("routing", buildRouting(bypassLan))
 
@@ -104,7 +106,49 @@ object XrayConfigBuilder {
      * A SOCKS inbound the VpnService forwards TCP/UDP into, plus the DNS
      * inbound the core answers lookups on.
      */
-    private fun buildInbounds(socksPort: Int): JSONArray = JSONArray().apply {
+    private fun buildInbounds(
+        socksPort: Int,
+        tunMtu: Int,
+        dnsPrimary: String,
+        dnsSecondary: String
+    ): JSONArray = JSONArray().apply {
+        // The TUN inbound. Without this the core never reads the VpnService
+        // descriptor at all: the handshake succeeds and the UI reports a live
+        // tunnel, but not one packet is carried, which is exactly the
+        // "connected with zero throughput" symptom.
+        //
+        // AndroidLibXrayLite exports the descriptor as the environment variable
+        // xray.tun.fd before starting, and this inbound is what picks it up.
+        put(
+            JSONObject()
+                .put("tag", "tun-in")
+                .put("protocol", "tun")
+                .put(
+                    "settings",
+                    JSONObject()
+                        .put("name", "meelano-tun")
+                        .put("mtu", tunMtu)
+                        .put("userLevel", 0)
+                        .put(
+                            "dns",
+                            JSONArray().put(dnsPrimary).put(dnsSecondary)
+                        )
+                )
+                .put(
+                    "sniffing",
+                    JSONObject()
+                        .put("enabled", true)
+                        // Recovering the hostname lets the exit node resolve it
+                        // itself, which defeats DNS poisoning and lands CDN
+                        // traffic on a working edge.
+                        .put("routeOnly", false)
+                        .put(
+                            "destOverride",
+                            JSONArray().put("http").put("tls").put("quic")
+                        )
+                )
+        )
+
         put(
             JSONObject()
                 .put("tag", "socks-in")
