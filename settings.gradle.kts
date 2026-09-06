@@ -9,6 +9,9 @@ pluginManagement {
     }
     mavenCentral()
     gradlePluginPortal()
+    // Compose Multiplatform (the desktop UI) is published by JetBrains, not
+    // Google, so it needs its own repository for both plugin and artifacts.
+    maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
   }
 }
 
@@ -19,9 +22,11 @@ dependencyResolutionManagement {
   repositories {
     google()
     mavenCentral()
+    maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
   }
 }
 
 rootProject.name = "MeeLano Tunnel"
 
 include(":app")
+include(":desktop")

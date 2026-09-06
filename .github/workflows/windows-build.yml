@@ -1,0 +1,130 @@
+name: Build MeeLano Tunnel for Windows
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Fast gate on Linux: compiles the shared engine and runs the unit tests.
+  # Catches an Android import creeping into the shared sources in ~1 minute
+  # instead of after a full Windows packaging run.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile and test the desktop module
+        run: ./gradlew :desktop:test --no-daemon --stacktrace
+
+  package:
+    needs: verify
+    # jpackage can only build an MSI on Windows, so the installer must be
+    # produced by a Windows runner.
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # jpackage builds the MSI through WiX; the runner ships it, but the
+      # directory has to be on PATH for jpackage to find light.exe/candle.exe.
+      - name: Add WiX to PATH
+        shell: pwsh
+        run: |
+          $wix = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+          if (Test-Path $wix) {
+            echo $wix | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+            Write-Host "WiX found at $wix"
+          } else {
+            Write-Host "::warning::WiX not at the expected path; installing"
+            choco install wixtoolset --no-progress -y
+            echo "C:\Program Files (x86)\WiX Toolset v3.11\bin" |
+              Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $line = Select-String -Path "app/build.gradle.kts" -Pattern 'versionName\s*=\s*"([^"]+)"' |
+            Select-Object -First 1
+          $version = $line.Matches[0].Groups[1].Value
+          echo "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "version: $version"
+
+      - name: Build the MSI installer
+        run: ./gradlew :desktop:packageMsi --no-daemon --stacktrace
+
+      - name: Build the portable distribution
+        run: ./gradlew :desktop:createDistributable --no-daemon --stacktrace
+
+      - name: Collect artefacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          $msi = Get-ChildItem -Path desktop/build/compose/binaries -Recurse -Filter *.msi |
+            Select-Object -First 1
+          if ($msi) {
+            Copy-Item $msi.FullName "dist/MeeLano-Tunnel-v$env:APP_VERSION-windows-setup.msi"
+            Write-Host "MSI: $($msi.Length) bytes"
+          } else {
+            Write-Host "::error::no MSI produced"
+            exit 1
+          }
+
+          # A zipped portable build for users who cannot run an installer.
+          $appDir = Get-ChildItem -Path desktop/build/compose/binaries -Recurse -Directory |
+            Where-Object { $_.Name -eq "MeeLano Tunnel" } | Select-Object -First 1
+          if ($appDir) {
+            Compress-Archive -Path $appDir.FullName `
+              -DestinationPath "dist/MeeLano-Tunnel-v$env:APP_VERSION-windows-portable.zip"
+          }
+
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Upload artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: meelano-windows
+          path: dist/*
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/arena/01a07171-meelano'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.APP_VERSION }}-windows-build${{ github.run_number }}
+          name: MeeLano Tunnel v${{ env.APP_VERSION }} for Windows
+          files: dist/*
+          body: |
+            **نسخه ویندوز MeeLano Tunnel**
+
+            - `MeeLano-Tunnel-v${{ env.APP_VERSION }}-windows-setup.msi` — نصب‌کننده (پیشنهادی)
+            - `MeeLano-Tunnel-v${{ env.APP_VERSION }}-windows-portable.zip` — نسخه قابل حمل
+
+            نیازی به نصب جاوا نیست؛ محیط اجرا همراه برنامه ارائه می‌شود.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
