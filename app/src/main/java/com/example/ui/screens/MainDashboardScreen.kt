@@ -3,10 +3,6 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -95,7 +91,6 @@ import com.example.ui.components.HealthRing
 import com.example.ui.components.MeelanoShieldLogo
 import com.example.ui.components.Pill
 import com.example.ui.components.ConnectOrb
-import com.example.ui.components.GlowDot
 import com.example.ui.components.ServerPortalButton
 import com.example.ui.components.ServerScanOverlay
 import com.example.ui.components.SectionHeader
@@ -117,7 +112,6 @@ import com.example.ui.theme.LocalAccent
 import com.example.ui.theme.MeelanoIconCyan
 import com.example.ui.theme.MeelanoIconViolet
 import androidx.compose.ui.geometry.Offset
-import com.example.ui.theme.MeelanoGoldVip
 import com.example.ui.theme.MeelanoGreenSuccess
 import com.example.ui.theme.MeelanoPurpleActive
 import com.example.ui.theme.MeelanoRedKillSwitch
@@ -230,6 +224,19 @@ fun MainDashboardScreen(
 
                 Spacer(Modifier.height(Spacing.Large))
 
+                ConnectOrb(
+                    state = connectionState,
+                    accent = accent,
+                    secondary = secondary,
+                    onClick = {
+                        if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        SoundEngine.play(SoundEngine.Cue.TAP)
+                        viewModel.requestToggle(context, onRequestVpnPermission)
+                    }
+                )
+
+                Spacer(Modifier.height(Spacing.Large))
+
                 // One control for the server: identity, live latency, node count
                 // and the route into the list. Previously an ActiveServerCard and
                 // a ServerPortalButton sat on the same screen doing the same job.
@@ -253,19 +260,6 @@ fun MainDashboardScreen(
                         if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         SoundEngine.play(SoundEngine.Cue.SCAN)
                         viewModel.connectWithBestEffort(context, onRequestVpnPermission)
-                    }
-                )
-
-                Spacer(Modifier.height(Spacing.Large))
-
-                ConnectOrb(
-                    state = connectionState,
-                    accent = accent,
-                    secondary = secondary,
-                    onClick = {
-                        if (hapticsEnabled) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        SoundEngine.play(SoundEngine.Cue.TAP)
-                        viewModel.requestToggle(context, onRequestVpnPermission)
                     }
                 )
 
@@ -400,6 +394,8 @@ private fun TopBar(
     onLock: () -> Unit,
     onToggleSound: () -> Unit
 ) {
+    val isConnectedState = connectionState == VpnConnectionState.CONNECTED
+
     val statusColor by animateColorAsState(
         when (connectionState) {
             VpnConnectionState.CONNECTED -> MeelanoGreenSuccess
@@ -443,52 +439,36 @@ private fun TopBar(
             )
         }
 
-        // ---- brand lockup: logo, name, and live status in one column ----
+        // ---- brand lockup ----
+        //
+        // Just the mark and the wordmark, set side by side. The green
+        // "connected" pill and the gold VIP badge that used to sit here both
+        // duplicated information shown far more clearly by the connect orb and
+        // the server row, and three competing status colours in one corner made
+        // the header read as cluttered rather than informative.
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(horizontalAlignment = Alignment.End) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // The wordmark carries the icon's neon gradient rather than
-                    // flat white, so the brand lockup and the launcher mark are
-                    // recognisably the same identity.
-                    Text(
-                        "MEELANO",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 2.2.sp,
-                        style = androidx.compose.ui.text.TextStyle(
-                            brush = Brush.horizontalGradient(
-                                listOf(MeelanoIconViolet, Color(0xFFEAF4FF), MeelanoIconCyan)
-                            ),
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = accent.copy(alpha = 0.55f),
-                                offset = Offset.Zero,
-                                blurRadius = 18f
-                            )
-                        )
+            Text(
+                "MEELANO",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = 2.6.sp,
+                style = androidx.compose.ui.text.TextStyle(
+                    // The wordmark carries the icon's neon gradient, and its
+                    // glow tracks the connection so the brand itself is the
+                    // status indicator.
+                    brush = Brush.horizontalGradient(
+                        listOf(MeelanoIconViolet, Color(0xFFEAF4FF), MeelanoIconCyan)
+                    ),
+                    shadow = androidx.compose.ui.graphics.Shadow(
+                        color = statusColor.copy(alpha = if (isConnectedState) 0.75f else 0.35f),
+                        offset = Offset.Zero,
+                        blurRadius = if (isConnectedState) 26f else 14f
                     )
-                    Spacer(Modifier.width(5.dp))
-                    // A struck-metal badge rather than a flat pill: bevelled
-                    // edge, gradient fill and a slow sheen that travels across
-                    // the face, matching the chrome on the launcher icon.
-                    VipBadge(accent = accent)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GlowDot(
-                        color = statusColor,
-                        size = 5.dp,
-                        pulsing = connectionState.isBusy
-                    )
-                    Text(
-                        connectionState.persName,
-                        fontSize = 9.sp,
-                        color = statusColor,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
+                )
+            )
             MeelanoShieldLogo(
                 size = 40.dp,
                 glowing = connectionState == VpnConnectionState.CONNECTED,
@@ -532,76 +512,6 @@ private fun CircleIconButton(icon: ImageVector, description: String, onClick: ()
 
 
 // ---------------------------------------------------------------- speed row
-
-/** Struck-metal VIP badge with a travelling sheen. */
-@Composable
-private fun VipBadge(accent: Color) {
-    val transition = rememberInfiniteTransition(label = "vip")
-    val sheen by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2800, easing = LinearEasing)),
-        label = "sheen"
-    )
-
-    Box(
-        modifier = Modifier
-            .padding(start = 6.dp)
-            .size(width = 38.dp, height = 17.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val r = size.height / 2f
-            val corner = androidx.compose.ui.geometry.CornerRadius(r, r)
-
-            // Warm halo, so the badge reads as lit metal on the dark field.
-            drawRoundRect(
-                brush = Brush.radialGradient(
-                    listOf(MeelanoGoldVip.copy(alpha = 0.35f), Color.Transparent),
-                    center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f),
-                    radius = size.width * 0.75f
-                ),
-                cornerRadius = corner
-            )
-            // Body: bright along the top edge, falling to a deep amber below.
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    listOf(
-                        Color(0xFFFFE9A8),
-                        MeelanoGoldVip,
-                        Color(0xFF9A6510)
-                    )
-                ),
-                cornerRadius = corner
-            )
-            // Travelling sheen.
-            val x = size.width * (sheen * 1.8f - 0.4f)
-            drawRoundRect(
-                brush = Brush.linearGradient(
-                    listOf(Color.Transparent, Color.White.copy(alpha = 0.55f), Color.Transparent),
-                    start = androidx.compose.ui.geometry.Offset(x - 14f, 0f),
-                    end = androidx.compose.ui.geometry.Offset(x + 14f, size.height)
-                ),
-                cornerRadius = corner
-            )
-            // Bevel.
-            drawRoundRect(
-                brush = Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = 0.75f), Color(0xFF6B4200).copy(alpha = 0.8f))
-                ),
-                cornerRadius = corner,
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2f)
-            )
-        }
-        Text(
-            "VIP",
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Black,
-            letterSpacing = 0.8.sp,
-            color = Color(0xFF3A2300)
-        )
-    }
-}
 
 @Composable
 private fun LiveSpeedRow(down: Float, up: Float, accent: Color) {

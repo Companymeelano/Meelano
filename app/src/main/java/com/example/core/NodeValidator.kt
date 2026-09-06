@@ -72,10 +72,14 @@ object NodeValidator {
                     return@async null
                 }
 
-                val result = gate.withPermit {
-                    if (passed.get() >= target) null
-                    else validate(endpoint, probeTimeoutMs, protect)
-                }
+                // Isolated per node: one throw here would otherwise cancel
+                // every sibling and abort the whole validation stage.
+                val result = runCatching {
+                    gate.withPermit {
+                        if (passed.get() >= target) null
+                        else validate(endpoint, probeTimeoutMs, protect)
+                    }
+                }.getOrNull()
                 if (result?.working == true) passed.incrementAndGet()
                 onProgress(completed.incrementAndGet(), total)
                 result

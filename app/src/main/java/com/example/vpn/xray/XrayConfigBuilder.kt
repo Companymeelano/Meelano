@@ -89,18 +89,28 @@ object XrayConfigBuilder {
     }
 
     private fun buildDns(primary: String, secondary: String): JSONObject =
-        JSONObject().put(
-            "servers",
-            JSONArray().apply {
-                put(primary)
-                put(secondary)
-                // Deliberately no geosite rules. They would pull in an 8 MB
-                // domain database to serve a split this app's users do not
-                // need, and a missing database makes such rules match nothing
-                // silently rather than failing loudly.
-                put("localhost")
-            }
-        )
+        JSONObject()
+            .put(
+                "servers",
+                JSONArray().apply {
+                    put(primary)
+                    put(secondary)
+                    // "localhost" is deliberately NOT listed. It resolves through
+                    // the device's own resolver, which on a censored network is
+                    // both the poisoned path we are trying to escape and a leak
+                    // of every hostname the user visits.
+                    //
+                    // No geosite rules either: they would pull in an 8 MB domain
+                    // database, and when it is absent such rules match nothing
+                    // silently rather than failing loudly.
+                }
+            )
+            // Resolve through the tunnel so lookups cannot be poisoned upstream.
+            .put("queryStrategy", "UseIP")
+            // A short cache removes a full round trip from repeat lookups, which
+            // is most of the perceived latency when loading a page of assets.
+            .put("disableCache", false)
+            .put("tag", "dns-in")
 
     /**
      * A SOCKS inbound the VpnService forwards TCP/UDP into, plus the DNS
@@ -373,6 +383,29 @@ object XrayConfigBuilder {
             else -> n
         }
         stream.put("network", network)
+
+        // Socket tuning. Absent this the core uses conservative defaults, which
+        // on a long-haul tunnel costs a great deal of throughput.
+        stream.put(
+            "sockopt",
+            JSONObject()
+                // Saves a full round trip on connection setup where the path
+                // supports it — worth the most on high-latency routes.
+                .put("tcpFastOpen", true)
+                // Small writes must not wait for Nagle to coalesce them; inside
+                // a tunnel that delay compounds on every request.
+                .put("tcpNoDelay", true)
+                // BBR-style pacing behaves far better than loss-based control
+                // across a congested international link.
+                .put("tcpcongestion", "bbr")
+                // Keep the connection warm so idle tabs do not pay a fresh
+                // handshake on every resume.
+                .put("tcpKeepAliveInterval", 15)
+                .put("tcpKeepAliveIdle", 100)
+                // Interface is chosen by VpnService.protect(), so let the core
+                // mark packets rather than binding them itself.
+                .put("mark", 0)
+        )
 
         when (endpoint.security) {
             "reality" -> {

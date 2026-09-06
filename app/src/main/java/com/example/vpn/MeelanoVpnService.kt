@@ -67,7 +67,19 @@ class MeelanoVpnService : VpnService() {
 
         private const val NOTIFICATION_ID = 9021
         private const val CHANNEL_ID = "meelano_vpn_channel"
-        private const val MTU = 1500
+        /**
+         * TUN MTU.
+         *
+         * 1500 is the Ethernet MTU and the wrong value for a tunnel: every
+         * packet then carries the proxy protocol header plus TLS framing plus
+         * the outer IP/TCP header, pushing it past the path MTU so the network
+         * fragments it. Fragmentation roughly doubles packet count and is a
+         * common cause of a tunnel that connects fine but feels slow.
+         *
+         * 1420 leaves headroom for VLESS/VMess headers, TLS records and a
+         * WebSocket frame while staying under the 1500 the carrier will accept.
+         */
+        private const val MTU = 1420
 
         private val _connectionState = MutableStateFlow(VpnConnectionState.DISCONNECTED)
         val connectionState: StateFlow<VpnConnectionState> = _connectionState.asStateFlow()

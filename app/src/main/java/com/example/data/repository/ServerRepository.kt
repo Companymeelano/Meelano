@@ -15,6 +15,7 @@ import com.example.data.model.BypassApp
 import com.example.data.model.ServerSort
 import com.example.data.model.VpnServer
 import com.example.data.settings.SettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
@@ -483,9 +484,22 @@ class ServerRepository(
             settings.setCachedFreeServers(encodeServers(servers))
             _updateProgress.value = null
             Result.success(servers)
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            // The caller went away (screen closed). Not an error, and it must
+            // not be reported to the user as a failed update.
             _updateProgress.value = null
-            Result.failure(e)
+            throw e
+        } catch (e: Throwable) {
+            // Catch Throwable, not Exception: an OutOfMemoryError on a large
+            // feed is an Error, so it slipped past the old handler and killed
+            // the refresh without ever surfacing a message.
+            _updateProgress.value = null
+            MeelanoVpnService.log("Refresh failed: ${e::class.java.simpleName}: ${e.message}")
+            Result.failure(
+                IllegalStateException(
+                    e.message ?: "به‌روزرسانی ناتمام ماند؛ دوباره تلاش کنید"
+                )
+            )
         }
     }
 

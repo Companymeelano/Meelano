@@ -106,4 +106,82 @@ class PingProgressTest {
 
         assertFalse(server.copy(isVerified = true).isUnproven)
     }
+
+    /**
+     * The stage-2 abort.
+     *
+     * Refresh died suddenly partway through "testing servers". The cause was
+     * structured concurrency: pingAll launched every probe with async inside a
+     * coroutineScope, so the first task to throw cancelled all its siblings and
+     * took the whole sweep down with it. A hostile feed entry — a malformed host,
+     * something the resolver rejects — was enough.
+     *
+     * Here addressOf throws for one item out of many. Every other item must
+     * still be measured and reported.
+     */
+    @Test
+    fun `one throwing item cannot abort the whole sweep`() {
+        val open = ServerSocket(0)
+        try {
+            val targets = (0 until 12).map { index ->
+                if (index == 5) "POISON" to 0 else "127.0.0.1" to open.localPort
+            }
+
+            val seen = AtomicInteger()
+            val results = runBlocking {
+                PingTester.pingAll(
+                    items = targets,
+                    parallelism = 4,
+                    timeoutMs = 600,
+                    keyOf = { "${it.first}:${it.second}#${targets.indexOf(it)}" },
+                    addressOf = { item ->
+                        if (item.first == "POISON") error("resolver blew up")
+                        item
+                    },
+                    onProgress = { _, _ -> seen.incrementAndGet() }
+                )
+            }
+
+            // The sweep ran to completion rather than dying at item 5.
+            assertEquals(targets.size, seen.get())
+            assertEquals(targets.size, results.size)
+            // And the survivors were genuinely measured, not just counted.
+            assertTrue(
+                "reachable nodes were lost with the failing one",
+                results.values.any { it in 0..5000 }
+            )
+        } finally {
+            open.close()
+        }
+    }
+
+    /**
+     * Same guarantee when the progress callback itself is the thing that throws:
+     * a UI observer must never be able to kill the scan.
+     */
+    @Test
+    fun `a throwing progress callback cannot abort the sweep`() {
+        val open = ServerSocket(0)
+        try {
+            val targets = (0 until 8).map { "127.0.0.1" to open.localPort }
+            val calls = AtomicInteger()
+
+            val results = runBlocking {
+                PingTester.pingAll(
+                    items = targets,
+                    parallelism = 3,
+                    timeoutMs = 600,
+                    keyOf = { "${it.first}:${it.second}#${calls.get()}" },
+                    addressOf = { it },
+                    onProgress = { _, _ ->
+                        if (calls.incrementAndGet() == 3) error("observer exploded")
+                    }
+                )
+            }
+
+            assertFalse("sweep returned nothing", results.isEmpty())
+        } finally {
+            open.close()
+        }
+    }
 }

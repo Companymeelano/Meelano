@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.TextSecondary
+import com.example.util.SoundEngine
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -71,8 +72,15 @@ fun ServerScanOverlay(
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                // A real perspective-projected globe rather than a flat spinner.
-                HoloGlobeLoader(accent = accent, secondary = secondary)
+                // A real perspective-projected globe rather than a flat spinner,
+                // and it answers touch: tapping spins it up, flares the nodes and
+                // sends a shockwave out from the finger. Waiting on a scan now has
+                // something to do instead of a frozen graphic.
+                HoloGlobeLoader(
+                    accent = accent,
+                    secondary = secondary,
+                    onTap = { SoundEngine.play(SoundEngine.Cue.TAP) }
+                )
 
                 Spacer(Modifier.height(26.dp))
 

@@ -5,6 +5,13 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -49,8 +56,18 @@ fun HoloGlobeLoader(
     secondary: Color,
     modifier: Modifier = Modifier,
     size: Dp = 180.dp,
-    nodes: Int = 26
+    nodes: Int = 26,
+    /** Invoked on tap, so the caller can fire a haptic or a sound cue. */
+    onTap: (() -> Unit)? = null
 ) {
+    val scope = rememberCoroutineScope()
+
+    // Tap state. The globe is not a decoration waiting out a timer: touching it
+    // spins it up and throws a shockwave out through the marker field, so the
+    // user gets an immediate answer that the app is alive and still working.
+    val kick = remember { Animatable(0f) }
+    val shock = remember { Animatable(1f) }
+    var tapOrigin by remember { mutableStateOf<Offset?>(null) }
     val transition = rememberInfiniteTransition(label = "globe")
     val spin by transition.animateFloat(
         initialValue = 0f,
@@ -83,7 +100,25 @@ fun HoloGlobeLoader(
         }
     }
 
-    Box(modifier = modifier.size(size)) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .pointerInput(Unit) {
+                detectTapGestures { position ->
+                    onTap?.invoke()
+                    scope.launch {
+                        // Momentary burst of extra rotation that decays away.
+                        kick.snapTo(1f)
+                        kick.animateTo(0f, tween(1100, easing = LinearEasing))
+                    }
+                    scope.launch {
+                        shock.snapTo(0f)
+                        shock.animateTo(1f, tween(760, easing = LinearEasing))
+                    }
+                    tapOrigin = position
+                }
+            }
+    ) {
         Canvas(Modifier.fillMaxSize()) {
             val centre = Offset(this.size.width / 2f, this.size.height / 2f)
             val radius = this.size.minDimension * 0.38f
@@ -92,9 +127,28 @@ fun HoloGlobeLoader(
             // a dead-on view reads as a flat circle and loses the 3-D effect.
             val tilt = -0.42f
 
+            // The tap adds up to a further half-turn on top of the idle spin.
+            val liveSpin = spin + kick.value * 3.1f
+
             drawAtmosphere(centre, radius, accent)
-            drawWireframe(centre, radius, spin, tilt, accent, secondary)
-            drawMarkers(centre, radius, spin, tilt, markers, sweep, accent, secondary)
+            drawWireframe(centre, radius, liveSpin, tilt, accent, secondary)
+            drawMarkers(
+                centre, radius, liveSpin, tilt, markers, sweep,
+                accent, secondary,
+                // Markers flare while the kick decays.
+                flare = kick.value
+            )
+
+            // Shockwave from the touch point, expanding and fading out.
+            val wave = shock.value
+            if (wave < 1f) {
+                drawCircle(
+                    color = secondary.copy(alpha = (1f - wave) * 0.55f),
+                    radius = radius * (0.2f + wave * 1.5f),
+                    center = tapOrigin ?: centre,
+                    style = Stroke(width = 3f * (1f - wave) + 0.5f)
+                )
+            }
         }
     }
 }
@@ -249,7 +303,9 @@ private fun DrawScope.drawMarkers(
     markers: List<Marker>,
     sweep: Float,
     accent: Color,
-    secondary: Color
+    secondary: Color,
+    /** 0 at rest, 1 immediately after a tap: brightens and enlarges every node. */
+    flare: Float = 0f
 ) {
     val projected = markers
         .map { it to project(it.x, it.y, it.z, spin, tilt, centre, radius) }
@@ -265,8 +321,10 @@ private fun DrawScope.drawMarkers(
         val depth = point.depth
         // Far side stays dim and cool; the near side is bright and saturated.
         val tone = lerpColor(secondary, accent, depth)
-        val alpha = (0.18f + 0.62f * depth) * (0.55f + 0.45f * pulse)
-        val dot = (1.1f + 2.4f * depth) * point.scale * (1f + 0.5f * pulse)
+        val alpha = ((0.18f + 0.62f * depth) * (0.55f + 0.45f * pulse) +
+            0.35f * flare).coerceAtMost(1f)
+        val dot = (1.1f + 2.4f * depth) * point.scale * (1f + 0.5f * pulse) *
+            (1f + 0.65f * flare)
 
         if (pulse > 0.05f) {
             drawCircle(

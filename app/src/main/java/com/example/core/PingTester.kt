@@ -73,17 +73,29 @@ object PingTester {
         // workers. With a permit pool each worker starts the moment one frees up.
         val gate = Semaphore(parallelism)
 
+        // Every task must be individually fault-tolerant.
+        //
+        // coroutineScope + awaitAll propagates the first failure and cancels all
+        // siblings, so one unexpected throw — a malformed host from a feed, a
+        // resolver error, a socket the system refuses — aborted the entire sweep
+        // partway through. That is what made stage 2 die suddenly mid-progress.
         val measured = items.map { item ->
             async(Dispatchers.IO) {
-                val latency = gate.withPermit {
-                    val address = addressOf(item)
-                    if (address == null) UNREACHABLE
-                    else ping(address.first, address.second, timeoutMs)
-                }
+                val latency = runCatching {
+                    gate.withPermit {
+                        val address = addressOf(item)
+                        if (address == null) UNREACHABLE
+                        else ping(address.first, address.second, timeoutMs)
+                    }
+                }.getOrDefault(UNREACHABLE)
                 // Report after every single probe. Without this the caller's
                 // counter sat at zero for the whole sweep and the UI looked hung.
-                onProgress(done.incrementAndGet(), total)
-                keyOf(item) to latency
+                //
+                // Guarded too: the callback is supplied by the UI layer, and a
+                // throw there would cancel the siblings just as surely as a
+                // failing probe would.
+                runCatching { onProgress(done.incrementAndGet(), total) }
+                runCatching { keyOf(item) }.getOrDefault("unknown-${done.get()}") to latency
             }
         }.awaitAll()
 
