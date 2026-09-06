@@ -123,8 +123,11 @@ class PingProgressTest {
     fun `one throwing item cannot abort the whole sweep`() {
         val open = ServerSocket(0)
         try {
+            // Indexed, so every entry has a distinct key. Keying by
+            // indexOf would collapse the identical host:port pairs into a
+            // single map entry and make the size assertion meaningless.
             val targets = (0 until 12).map { index ->
-                if (index == 5) "POISON" to 0 else "127.0.0.1" to open.localPort
+                index to (if (index == 5) "POISON" to 0 else "127.0.0.1" to open.localPort)
             }
 
             val seen = AtomicInteger()
@@ -133,10 +136,10 @@ class PingProgressTest {
                     items = targets,
                     parallelism = 4,
                     timeoutMs = 600,
-                    keyOf = { "${it.first}:${it.second}#${targets.indexOf(it)}" },
-                    addressOf = { item ->
-                        if (item.first == "POISON") error("resolver blew up")
-                        item
+                    keyOf = { "node-${it.first}" },
+                    addressOf = { (_, address) ->
+                        if (address.first == "POISON") error("resolver blew up")
+                        address
                     },
                     onProgress = { _, _ -> seen.incrementAndGet() }
                 )
@@ -163,7 +166,8 @@ class PingProgressTest {
     fun `a throwing progress callback cannot abort the sweep`() {
         val open = ServerSocket(0)
         try {
-            val targets = (0 until 8).map { "127.0.0.1" to open.localPort }
+            // Indexed for stable distinct keys; calls.get() would vary per task.
+            val targets = (0 until 8).map { it to ("127.0.0.1" to open.localPort) }
             val calls = AtomicInteger()
 
             val results = runBlocking {
@@ -171,14 +175,16 @@ class PingProgressTest {
                     items = targets,
                     parallelism = 3,
                     timeoutMs = 600,
-                    keyOf = { "${it.first}:${it.second}#${calls.get()}" },
-                    addressOf = { it },
+                    keyOf = { "node-${it.first}" },
+                    addressOf = { it.second },
                     onProgress = { _, _ ->
                         if (calls.incrementAndGet() == 3) error("observer exploded")
                     }
                 )
             }
 
+            // Every probe still completed despite the observer throwing.
+            assertEquals(targets.size, results.size)
             assertFalse("sweep returned nothing", results.isEmpty())
         } finally {
             open.close()
