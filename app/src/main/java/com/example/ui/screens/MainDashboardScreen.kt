@@ -45,6 +45,9 @@ import androidx.compose.material.icons.filled.Lan
 import androidx.compose.material.icons.filled.TravelExplore
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.AdminPanelSettings
+import com.example.ui.theme.MeelanoGoldVip
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Public
@@ -98,6 +101,8 @@ import com.example.ui.theme.Spacing
 import com.example.ui.components.SignalBars
 import com.example.ui.components.StatTile
 import com.example.ui.components.TrafficLineChart
+import com.example.ui.modals.AccountPanelModal
+import com.example.ui.modals.AdminPanelModal
 import com.example.ui.modals.ImportConfigDialog
 import com.example.ui.modals.LiveLogConsoleDialog
 import com.example.ui.modals.NeedsServersDialog
@@ -151,6 +156,7 @@ fun MainDashboardScreen(
     val killSwitchEnabled by viewModel.killSwitchEnabled.collectAsStateWithLifecycle()
     val dashboardTab by viewModel.dashboardTab.collectAsStateWithLifecycle()
     val isSoundMuted by viewModel.isSoundMuted.collectAsStateWithLifecycle()
+    val session by viewModel.session.collectAsStateWithLifecycle()
     val hapticsEnabled by viewModel.hapticsEnabled.collectAsStateWithLifecycle()
     val lastError by viewModel.lastError.collectAsStateWithLifecycle()
     val toast by viewModel.toast.collectAsStateWithLifecycle()
@@ -189,8 +195,10 @@ fun MainDashboardScreen(
                     accent = accent,
                     secondary = secondary,
                     isSoundMuted = isSoundMuted,
+                    isAdmin = session.isAdmin,
                     onLock = { viewModel.securityManager.lock() },
-                    onToggleSound = { viewModel.toggleSoundMute() }
+                    onToggleSound = { viewModel.toggleSoundMute() },
+                    onOpenAccount = { viewModel.openAccountPanel() }
                 )
 
                 Spacer(Modifier.height(Spacing.Large))
@@ -391,8 +399,10 @@ private fun TopBar(
     accent: Color,
     secondary: Color,
     isSoundMuted: Boolean,
+    isAdmin: Boolean,
     onLock: () -> Unit,
-    onToggleSound: () -> Unit
+    onToggleSound: () -> Unit,
+    onOpenAccount: () -> Unit
 ) {
     val isConnectedState = connectionState == VpnConnectionState.CONNECTED
 
@@ -436,6 +446,19 @@ private fun TopBar(
                 "صدا",
                 if (isSoundMuted) TextMuted else accent,
                 onToggleSound
+            )
+            Box(
+                Modifier
+                    .size(width = 1.dp, height = 16.dp)
+                    .background(Color.White.copy(alpha = 0.10f))
+            )
+            // Admins get the gold key, so the panel is discoverable without
+            // hunting for it in settings.
+            CapsuleIcon(
+                if (isAdmin) Icons.Default.AdminPanelSettings else Icons.Default.AccountCircle,
+                "پنل کاربری",
+                if (isAdmin) MeelanoGoldVip else accent,
+                onOpenAccount
             )
         }
 
@@ -935,6 +958,11 @@ private fun Modals(
 ) {
     val context = LocalContext.current
 
+    val session by viewModel.session.collectAsStateWithLifecycle()
+    val allAccounts by viewModel.allAccounts.collectAsStateWithLifecycle()
+    val isAccountPanelOpen by viewModel.isAccountPanelOpen.collectAsStateWithLifecycle()
+    val isAdminPanelOpen by viewModel.isAdminPanelOpen.collectAsStateWithLifecycle()
+
     val isServersModalOpen by viewModel.isServersModalOpen.collectAsStateWithLifecycle()
     val isSettingsModalOpen by viewModel.isSettingsModalOpen.collectAsStateWithLifecycle()
     val isLogsConsoleOpen by viewModel.isLogsConsoleOpen.collectAsStateWithLifecycle()
@@ -942,6 +970,48 @@ private fun Modals(
     val isImportOpen by viewModel.isImportOpen.collectAsStateWithLifecycle()
     val selectedServerForQr by viewModel.selectedServerForQr.collectAsStateWithLifecycle()
     val smartImportFallbackOpen by viewModel.smartImportFallbackOpen.collectAsStateWithLifecycle()
+
+    val panelAccent = LocalAccent.current.primary
+    val panelSecondary = LocalAccent.current.secondary
+
+    if (isAccountPanelOpen) {
+        AccountPanelModal(
+            session = session,
+            accent = panelAccent,
+            secondary = panelSecondary,
+            onOpenAdmin = {
+                viewModel.closeAccountPanel()
+                viewModel.openAdminPanel()
+            },
+            onSignOut = {
+                viewModel.closeAccountPanel()
+                viewModel.signOut(context)
+            },
+            onDismiss = { viewModel.closeAccountPanel() }
+        )
+    }
+
+    if (isAdminPanelOpen) {
+        AdminPanelModal(
+            accounts = allAccounts,
+            accent = panelAccent,
+            secondary = panelSecondary,
+            onCreate = { user, pass, quota, days, note ->
+                viewModel.accounts.createAccount(
+                    username = user,
+                    password = pass,
+                    quotaBytes = quota,
+                    durationDays = days,
+                    note = note
+                )
+            },
+            onDelete = { viewModel.accounts.deleteAccount(it) },
+            onSuspend = { name, value -> viewModel.accounts.setSuspended(name, value) },
+            onRenew = { name, bytes, days -> viewModel.accounts.renew(name, bytes, days) },
+            onResetUsage = { viewModel.accounts.resetUsage(it) },
+            onDismiss = { viewModel.closeAdminPanel() }
+        )
+    }
 
     if (isServersModalOpen) {
         val vip by viewModel.vipServers.collectAsStateWithLifecycle()

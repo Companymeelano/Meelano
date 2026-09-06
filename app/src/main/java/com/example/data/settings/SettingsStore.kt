@@ -155,14 +155,22 @@ class SettingsStore(private val context: Context) {
             "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/vmess_configs.txt",
             "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/trojan_configs.txt",
             "https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/ss_configs.txt",
-            // Curated protocol-split feeds from other maintained aggregators.
-            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vless.txt",
-            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/vmess.txt",
-            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/trojan.txt",
-            "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Splitted-By-Protocol/ss.txt",
-            // Broad aggregators, kept last so curated nodes rank first.
-            "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt",
-            "https://raw.githubusercontent.com/yebekhe/TVC/main/subscriptions/xray/normal/mix"
+            // Epodonios/v2ray-configs — replaces barry-far, whose repository
+            // GitHub blocked for a terms-of-service violation in May 2025 and
+            // which had been returning HTTP 403 for every request since. These
+            // feeds are base64 subscription blobs; ConfigParser detects and
+            // decodes that automatically. Verified live: ~6,500 VLESS nodes
+            // across ~2,700 distinct hosts.
+            "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vless.txt",
+            "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/vmess.txt",
+            "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/trojan.txt",
+            "https://raw.githubusercontent.com/Epodonios/v2ray-configs/main/Splitted-By-Protocol/ss.txt",
+            // Broad aggregator, kept last so curated nodes rank first. Note the
+            // capital B: the owner renamed the account, and the lowercase path
+            // only still resolves through GitHub's redirect.
+            "https://raw.githubusercontent.com/MahdiBland/V2RayAggregator/master/sub/sub_merge.txt"
+            // yebekhe/TVC removed: the subscriptions/xray/normal/mix path now
+            // returns 404, so it contributed nothing but a slow timeout.
         )
     }
 }

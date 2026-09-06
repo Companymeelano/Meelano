@@ -101,6 +101,27 @@ class ServerRepository(
     /** No more than this many surviving nodes may share one host address. */
     private val MAX_NODES_PER_HOST = 3
 
+    /**
+     * How many nodes stage 2 probes. Raised from 400: at 32-way parallelism and
+     * a 1.5 s timeout the worst case is about 47 s, and the feeds are now large
+     * enough that a small sample kept missing the live nodes entirely.
+     */
+    private val STAGE2_SAMPLE = 900
+
+    /** Size of the second-chance sweep when the first sample comes back empty. */
+    private val RETRY_SAMPLE = 400
+
+    /**
+     * Takes [count] items spread evenly across [items] instead of the first
+     * [count].
+     *
+     * Subscription feeds are append-ordered: the top of the file is the oldest
+     * and least likely to still be alive, while freshly added nodes sit at the
+     * bottom. Slicing off the head therefore sampled the deadest part of the
+     * pool. Striding hits new and old alike, and keeps host diversity, which
+     * matters because feeds arrive grouped by provider.
+     */
+
     private companion object {
         /**
          * Subscription lists are small; 8 MiB holds every mirror many times
@@ -367,9 +388,18 @@ class ServerRepository(
                 .toList()
 
             // Stage 2 — cheap TCP reachability, to shrink the field fast.
-            _updateProgress.value = UpdateProgress("۲ از ۳ · تست دسترسی ${eligible.size} نود", 0, eligible.size)
-            val reachable = PingTester.pingAll(
-                items = eligible.take(400),
+            //
+            // Sample ACROSS the whole pool rather than taking the first 400.
+            // The feeds are append-ordered, so the head of the file is the
+            // oldest and deadest part of it: on a 22,000-line feed take(400)
+            // tested 400 stale nodes, every one failed, and the refresh ran to
+            // 100% of stage 2 before dying with "no node reachable". That is
+            // exactly the "fills to 99% then errors" report, and it is why a
+            // VPN made no difference — the nodes really were all dead.
+            val candidates = NodeSampler.sampleEvenly(eligible, STAGE2_SAMPLE)
+            _updateProgress.value = UpdateProgress("۲ از ۳ · تست دسترسی ${candidates.size} نود", 0, candidates.size)
+            var reachable = PingTester.pingAll(
+                items = candidates,
                 parallelism = 32,
                 timeoutMs = 1500,
                 keyOf = { "${it.host}:${it.port}" },
@@ -378,7 +408,7 @@ class ServerRepository(
                     _updateProgress.value = UpdateProgress("۲ از ۳ · تست دسترسی", done, total)
                 }
             ).let { latencies ->
-                eligible.mapNotNull { endpoint ->
+                candidates.mapNotNull { endpoint ->
                     val latency = latencies["${endpoint.host}:${endpoint.port}"]
                         ?: PingTester.UNREACHABLE
                     if (latency <= 0 || latency >= PingTester.UNREACHABLE) null else endpoint to latency
@@ -387,14 +417,46 @@ class ServerRepository(
                     // Only the most responsive candidates earn a full handshake.
                     .take(keep * 4)
             }
-            val reachableEndpoints = reachable.map { it.first }
-
             if (reachable.isEmpty()) {
-                _updateProgress.value = null
-                return@withContext Result.failure(
-                    IllegalStateException("هیچ نودی در دسترس نبود؛ اتصال اینترنت را بررسی کنید")
-                )
+                // Second pass over a different slice before giving up. A whole
+                // sample coming back dead usually means we were unlucky with the
+                // stride or the network stalled briefly, not that all several
+                // thousand nodes are down.
+                _updateProgress.value =
+                    UpdateProgress("۲ از ۳ · تلاش دوباره", 0, RETRY_SAMPLE)
+                val retryPool = eligible.filterNot { it in candidates.toSet() }
+                val retry = if (retryPool.isEmpty()) emptyList() else PingTester.pingAll(
+                    items = NodeSampler.sampleEvenly(retryPool.shuffled(), RETRY_SAMPLE),
+                    parallelism = 32,
+                    timeoutMs = 2_500,
+                    keyOf = { "${it.host}:${it.port}" },
+                    addressOf = { it.host to it.port },
+                    onProgress = { done, total ->
+                        _updateProgress.value = UpdateProgress("۲ از ۳ · تلاش دوباره", done, total)
+                    }
+                ).let { latencies ->
+                    retryPool.mapNotNull { endpoint ->
+                        val latency = latencies["${endpoint.host}:${endpoint.port}"]
+                            ?: PingTester.UNREACHABLE
+                        if (latency <= 0 || latency >= PingTester.UNREACHABLE) null
+                        else endpoint to latency
+                    }.sortedBy { it.second }.take(keep * 4)
+                }
+
+                if (retry.isEmpty()) {
+                    _updateProgress.value = null
+                    return@withContext Result.failure(
+                        IllegalStateException(
+                            "از ${candidates.size} نود آزمایش‌شده هیچ‌کدام پاسخ نداد. " +
+                                "احتمالاً شبکه اجازه اتصال مستقیم نمی‌دهد؛ چند دقیقه بعد دوباره تلاش کنید."
+                        )
+                    )
+                }
+                reachable = retry
             }
+
+            // Computed after the retry, so it reflects whichever sweep succeeded.
+            val reachableEndpoints = reachable.map { it.first }
 
             // Stage 3 — the strict test: a real protocol handshake plus a live
             // HTTP request proxied through the node. Only nodes that genuinely
@@ -791,4 +853,24 @@ class ServerRepository(
     }
 
     // endregion
+}
+
+/**
+ * Picks a spread of items rather than a prefix.
+ *
+ * Subscription feeds are append-ordered: the top of the file is the oldest and
+ * least likely to still be alive, while freshly added nodes sit at the bottom.
+ * Slicing off the head therefore sampled the deadest part of the pool — the
+ * cause of a refresh that reached 100% of its reachability sweep and then
+ * reported that not one node had answered.
+ *
+ * File-level so it can be tested without constructing a repository, which needs
+ * an Android Context.
+ */
+internal object NodeSampler {
+    fun <T> sampleEvenly(items: List<T>, count: Int): List<T> {
+        if (items.size <= count || count <= 0) return items
+        val stride = items.size.toDouble() / count
+        return (0 until count).map { items[(it * stride).toInt().coerceAtMost(items.lastIndex)] }
+    }
 }

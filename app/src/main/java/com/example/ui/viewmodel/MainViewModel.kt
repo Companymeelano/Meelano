@@ -9,6 +9,12 @@ import com.example.data.model.CoreProtocolFilter
 import com.example.data.model.NetworkLiveStats
 import com.example.data.model.RoutingMode
 import com.example.data.model.ServerSort
+import com.example.data.account.Account
+import com.example.data.account.AccountStore
+import com.example.data.account.LockReason
+import com.example.data.account.Quota
+import com.example.data.account.Session
+import com.example.data.account.SignInResult
 import com.example.data.model.VpnServer
 import com.example.data.repository.ServerRepository
 import com.example.data.security.SecurityManager
@@ -32,8 +38,88 @@ import kotlinx.coroutines.launch
 class MainViewModel(
     private val repository: ServerRepository,
     private val settings: SettingsStore,
-    val securityManager: SecurityManager
+    val securityManager: SecurityManager,
+    val accounts: AccountStore
 ) : ViewModel() {
+
+    // region accounts
+
+    val session: StateFlow<Session> = accounts.session
+    val allAccounts: StateFlow<List<Account>> = accounts.accounts
+    val lockNotice: StateFlow<LockReason> = accounts.lockNotice
+
+    private val _signInError = MutableStateFlow<String?>(null)
+    val signInError: StateFlow<String?> = _signInError.asStateFlow()
+
+    private val _isAccountPanelOpen = MutableStateFlow(false)
+    val isAccountPanelOpen: StateFlow<Boolean> = _isAccountPanelOpen.asStateFlow()
+
+    private val _isAdminPanelOpen = MutableStateFlow(false)
+    val isAdminPanelOpen: StateFlow<Boolean> = _isAdminPanelOpen.asStateFlow()
+
+    /** Traffic already billed, so each tick charges only the delta. */
+    private var lastBilledBytes = 0L
+
+    fun signIn(username: String, password: String) {
+        when (val result = accounts.signIn(username, password)) {
+            is SignInResult.Success -> _signInError.value = null
+            is SignInResult.SignedInButLocked -> _signInError.value = null
+            is SignInResult.Locked ->
+                _signInError.value = Quota.lockMessage(result.reason)
+            SignInResult.InvalidCredentials ->
+                _signInError.value = "نام کاربری یا گذرواژه نادرست است"
+        }
+    }
+
+    fun continueAsGuest() {
+        _signInError.value = null
+        accounts.continueAsGuest()
+    }
+
+    fun signOut(context: Context) {
+        // Never leave a tunnel running for someone who has left the session.
+        stopVpn(context)
+        accounts.signOut()
+        lastBilledBytes = 0L
+    }
+
+    fun clearSignInError() { _signInError.value = null }
+    fun openAccountPanel() { _isAccountPanelOpen.value = true }
+    fun closeAccountPanel() { _isAccountPanelOpen.value = false }
+    fun openAdminPanel() { _isAdminPanelOpen.value = true }
+    fun closeAdminPanel() { _isAdminPanelOpen.value = false }
+    fun acknowledgeLockNotice() = accounts.acknowledgeLockNotice()
+
+    /**
+     * Bills live traffic against the signed-in account and cuts the tunnel the
+     * moment the allowance runs out.
+     *
+     * Enforcement lives here rather than at sign-in because a quota that is only
+     * checked when the app opens is no quota at all — a session left running
+     * would sail past it indefinitely.
+     */
+    private fun watchAllowance() {
+        viewModelScope.launch {
+            MeelanoVpnService.liveStats.collect { stats ->
+                val total = ((stats.totalDownloadedMb + stats.totalUploadedMb) * 1024f * 1024f).toLong()
+                // The service resets its counters on each connect, so a smaller
+                // total means a new session rather than negative usage.
+                if (total < lastBilledBytes) lastBilledBytes = 0L
+                val delta = total - lastBilledBytes
+                if (delta > 0) {
+                    lastBilledBytes = total
+                    val reason = accounts.recordUsage(delta)
+                    if (reason != LockReason.NONE) appContext?.let { stopVpn(it) }
+                }
+                // Expiry is a clock, not a byte count, so it needs its own check.
+                if (accounts.refreshLock() != LockReason.NONE) {
+                    appContext?.let { stopVpn(it) }
+                }
+            }
+        }
+    }
+
+    // endregion
 
     /** Application context remembered from the last connect, for auto-retry. */
     private var appContext: Context? = null
@@ -146,6 +232,7 @@ class MainViewModel(
             // now points them at the server screen instead.
         }
         watchForDrops()
+        watchAllowance()
 
         // Mirror the persisted mute preference into the sound engine.
         viewModelScope.launch {
@@ -160,6 +247,25 @@ class MainViewModel(
         if (state == VpnConnectionState.CONNECTED || state.isBusy) {
             stopVpn(context)
             return
+        }
+
+        // An exhausted allowance stops the connection here, with the reason
+        // shown, rather than letting the tunnel come up and die seconds later.
+        val lock = accounts.refreshLock()
+        if (lock != LockReason.NONE) {
+            _isAccountPanelOpen.value = true
+            return
+        }
+
+        // Guests may not dial a VIP node. Rather than refuse outright, fall back
+        // to the free list, which is what they are entitled to.
+        if (!session.value.canUseVip && activeServer.value.isVip) {
+            val free = freeServers.value.firstOrNull()
+            if (free == null) {
+                _needsServers.value = true
+                return
+            }
+            selectServer(free, context)
         }
 
         // With no nodes at all there is nothing to dial, so send the user to the
@@ -667,11 +773,12 @@ class MainViewModel(
     class Factory(
         private val repository: ServerRepository,
         private val settings: SettingsStore,
-        private val securityManager: SecurityManager
+        private val securityManager: SecurityManager,
+        private val accounts: AccountStore
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            MainViewModel(repository, settings, securityManager) as T
+            MainViewModel(repository, settings, securityManager, accounts) as T
     }
 
     private companion object {

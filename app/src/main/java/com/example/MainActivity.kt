@@ -23,6 +23,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.repository.ServerRepository
 import com.example.data.security.SecurityManager
 import com.example.data.settings.SettingsStore
+import com.example.data.account.AccountStore
+import com.example.data.account.LockReason
+import com.example.ui.screens.LoginScreen
+import com.example.ui.modals.ServiceEndedDialog
+import com.example.ui.theme.LocalAccent
 import com.example.ui.screens.MainDashboardScreen
 import com.example.ui.theme.AccentPreset
 import com.example.ui.theme.MyApplicationTheme
@@ -39,10 +44,11 @@ class MainActivity : FragmentActivity() {
         val settings = SettingsStore(applicationContext)
         val repository = ServerRepository(applicationContext, settings)
         securityManager = SecurityManager(applicationContext)
+        val accountStore = AccountStore(applicationContext)
 
         setContent {
             val viewModel: MainViewModel = viewModel(
-                factory = MainViewModel.Factory(repository, settings, securityManager)
+                factory = MainViewModel.Factory(repository, settings, securityManager, accountStore)
             )
             val accentKey by viewModel.themeAccent.collectAsStateWithLifecycle()
 
@@ -84,15 +90,42 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
-                MainDashboardScreen(
-                    viewModel = viewModel,
-                    onRequestVpnPermission = {
-                        val intent: Intent? = VpnService.prepare(context)
-                        if (intent != null) vpnPermissionLauncher.launch(intent)
-                        else viewModel.onPermissionResult(context, true)
-                    },
-                    onRequestBiometric = { onSuccess, onError -> promptBiometric(onSuccess, onError) }
-                )
+                // The gate: nobody reaches the dashboard without either signing
+                // in or explicitly choosing the guest path.
+                val session by viewModel.session.collectAsStateWithLifecycle()
+                val signInError by viewModel.signInError.collectAsStateWithLifecycle()
+                val lockNotice by viewModel.lockNotice.collectAsStateWithLifecycle()
+
+                if (!session.isSignedIn && !session.isGuest) {
+                    LoginScreen(
+                        accent = LocalAccent.current.primary,
+                        secondary = LocalAccent.current.secondary,
+                        errorMessage = signInError,
+                        lockReason = LockReason.NONE,
+                        onSignIn = viewModel::signIn,
+                        onGuest = viewModel::continueAsGuest,
+                        onDismissError = viewModel::clearSignInError
+                    )
+                } else {
+                    // Allowance ran out — tell them plainly, once, on arrival.
+                    if (lockNotice != LockReason.NONE) {
+                        ServiceEndedDialog(
+                            reason = lockNotice,
+                            accent = LocalAccent.current.primary,
+                            onDismiss = viewModel::acknowledgeLockNotice
+                        )
+                    }
+
+                    MainDashboardScreen(
+                        viewModel = viewModel,
+                        onRequestVpnPermission = {
+                            val intent: Intent? = VpnService.prepare(context)
+                            if (intent != null) vpnPermissionLauncher.launch(intent)
+                            else viewModel.onPermissionResult(context, true)
+                        },
+                        onRequestBiometric = { onSuccess, onError -> promptBiometric(onSuccess, onError) }
+                    )
+                }
             }
         }
     }
